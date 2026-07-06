@@ -28,6 +28,8 @@ foreach ($module in $requiredModules) {
     Import-Module (Join-Path -Path $moduleRoot -ChildPath $module) -Force
 }
 
+$tempRoot = $null
+
 function New-VideoArchiveRecord {
     param(
         [string]$SourcePath,
@@ -106,6 +108,28 @@ function Remove-IfExists {
     }
 }
 
+function Normalize-InputPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $normalized = $Path.Trim()
+    $normalized = $normalized.Trim('"')
+
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        return $normalized
+    }
+
+    $isDriveRoot = $normalized -match '^[a-zA-Z]:\\$'
+    $isUncRoot = $normalized -match '^\\\\[^\\]+\\[^\\]+\\$'
+    if (-not $isDriveRoot -and -not $isUncRoot) {
+        $normalized = $normalized.TrimEnd('\')
+    }
+
+    return $normalized
+}
+
 function Get-ReadableErrorMessage {
     param(
         [Parameter(Mandatory)]
@@ -135,6 +159,8 @@ try {
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
         $InputPath = Read-Host 'Enter file or folder path'
     }
+
+    $InputPath = Normalize-InputPath -Path $InputPath
 
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
         throw 'Input path is required.'
