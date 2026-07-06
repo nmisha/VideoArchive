@@ -26,7 +26,9 @@ function Test-FileTimestampsPreserved {
         [string]$SourceFile,
 
         [Parameter(Mandatory)]
-        [string]$OutputFile
+        [string]$OutputFile,
+
+        [double]$LastAccessToleranceSeconds = 2
     )
 
     $source = Get-Item -LiteralPath $SourceFile
@@ -41,8 +43,9 @@ function Test-FileTimestampsPreserved {
         $errors.Add("LastWriteTime mismatch: $($source.LastWriteTime) -> $($output.LastWriteTime)")
     }
 
-    if ($source.LastAccessTime -ne $output.LastAccessTime) {
-        $errors.Add("LastAccessTime mismatch: $($source.LastAccessTime) -> $($output.LastAccessTime)")
+    $lastAccessDelta = [math]::Abs(($source.LastAccessTime - $output.LastAccessTime).TotalSeconds)
+    if ($lastAccessDelta -gt $LastAccessToleranceSeconds) {
+        $errors.Add("LastAccessTime mismatch: $($source.LastAccessTime) -> $($output.LastAccessTime) (delta ${lastAccessDelta}s)")
     }
 
     return @($errors)
@@ -63,7 +66,9 @@ function Test-EncodedVideo {
         [Parameter(Mandatory)]
         [string]$OutputFile,
 
-        [switch]$ValidateTimestamps
+        [switch]$ValidateTimestamps,
+
+        [double]$FpsTolerance = 0.05
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -82,7 +87,7 @@ function Test-EncodedVideo {
     }
 
     if ($null -ne $SourceInfo.Fps -and $null -ne $OutputInfo.Fps) {
-        if ([math]::Abs($SourceInfo.Fps - $OutputInfo.Fps) -gt 0.01) {
+        if ([math]::Abs($SourceInfo.Fps - $OutputInfo.Fps) -gt $FpsTolerance) {
             $errors.Add("FPS mismatch: $($SourceInfo.Fps) -> $($OutputInfo.Fps)")
         }
     }

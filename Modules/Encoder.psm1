@@ -248,6 +248,9 @@ function Invoke-EncodeJob {
             Start-Sleep -Milliseconds 500
         }
 
+        $process.WaitForExit()
+        $process.Refresh()
+
         $stdoutUpdate = Read-AppendedLines -Path $stdoutPath -StartIndex $stdoutIndex
         $stderrUpdate = Read-AppendedLines -Path $stderrPath -StartIndex $stderrIndex
         foreach ($streamUpdate in @($stdoutUpdate, $stderrUpdate)) {
@@ -258,7 +261,7 @@ function Invoke-EncodeJob {
             }
         }
 
-        $exitCode = $process.ExitCode
+        $exitCode = [int]$process.ExitCode
     } finally {
         $stopwatch.Stop()
         if ($null -ne $process) {
