@@ -205,10 +205,11 @@ try {
     }
 
     $runStart = Get-Date
+    $completedCount = 0
 
     for ($index = 0; $index -lt $files.Count; $index++) {
         $file = $files[$index]
-        Update-VideoArchiveProgress -Current ($index + 1) -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart
+        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart
 
         $tempOutputFile = $null
         $finalOutputFile = $null
@@ -247,6 +248,7 @@ try {
                     -ValidationPassed $false `
                     -Duration $null `
                     -DryRunFlag $false)
+                $completedCount++
                 continue
             }
 
@@ -268,12 +270,13 @@ try {
                     -ValidationPassed $false `
                     -Duration $null `
                     -DryRunFlag $true)
+                $completedCount++
                 continue
             }
 
             $tempOutputFile = Get-TempOutputPath -TempRoot $tempRoot -RelativePath $relativeOutputPath
             $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -NvEncPath $config.Tools.NvEnc -Preset $config.Preset
-            $encodeResult = Invoke-EncodeJob -Job $job
+            $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry }
 
             if (-not $encodeResult.Success) {
                 $summary.Failed++
@@ -293,6 +296,7 @@ try {
                     -ValidationPassed $false `
                     -Duration $encodeResult.Duration.ToString() `
                     -DryRunFlag $false)
+                $completedCount++
                 continue
             }
 
@@ -326,6 +330,7 @@ try {
                     -ValidationPassed $false `
                     -Duration $encodeResult.Duration.ToString() `
                     -DryRunFlag $false)
+                $completedCount++
                 continue
             }
 
@@ -357,6 +362,7 @@ try {
                     -ValidationPassed $true `
                     -Duration $encodeResult.Duration.ToString() `
                     -DryRunFlag $false)
+                $completedCount++
                 continue
             }
 
@@ -377,6 +383,7 @@ try {
                 -ValidationPassed $true `
                 -Duration $encodeResult.Duration.ToString() `
                 -DryRunFlag $false)
+            $completedCount++
         } catch {
             $summary.Failed++
             $errorMessage = Get-ReadableErrorMessage -ErrorRecord $_
@@ -398,6 +405,7 @@ try {
                 -Duration $null `
                 -DryRunFlag $false)
             Remove-IfExists -Path $tempOutputFile
+            $completedCount++
         }
     }
 

@@ -1,5 +1,14 @@
 Set-StrictMode -Version Latest
 
+$script:InlineTelemetryActive = $false
+
+function Complete-InlineTelemetry {
+    if ($script:InlineTelemetryActive) {
+        Write-Host ''
+        $script:InlineTelemetryActive = $false
+    }
+}
+
 function Show-VideoArchiveBanner {
     [CmdletBinding()]
     param(
@@ -7,6 +16,7 @@ function Show-VideoArchiveBanner {
         [psobject]$Config
     )
 
+    Complete-InlineTelemetry
     Write-Host ''
     Write-Host "$($Config.AppName) MVP v1.0" -ForegroundColor Cyan
     Write-Host "Preset: $($Config.PresetName)" -ForegroundColor DarkCyan
@@ -20,6 +30,7 @@ function Select-VideoArchivePreset {
         [psobject]$PresetCatalog
     )
 
+    Complete-InlineTelemetry
     Write-Host 'Available presets:' -ForegroundColor Cyan
     for ($index = 0; $index -lt $PresetCatalog.Presets.Count; $index++) {
         $preset = $PresetCatalog.Presets[$index]
@@ -59,6 +70,7 @@ function Write-VideoArchiveStatus {
         [string]$Level = 'Info'
     )
 
+    Complete-InlineTelemetry
     $color = switch ($Level) {
         'Warn' { 'Yellow' }
         'Error' { 'Red' }
@@ -79,28 +91,67 @@ function Update-VideoArchiveProgress {
         [int]$Total,
 
         [Parameter(Mandatory)]
+        [int]$Completed,
+
+        [Parameter(Mandatory)]
         [string]$CurrentFile,
 
         [Parameter(Mandatory)]
         [datetime]$StartTime
     )
 
-    $percent = if ($Total -gt 0) { [int](($Current / $Total) * 100) } else { 0 }
+    $percent = if ($Total -gt 0) { [int](($Completed / $Total) * 100) } else { 0 }
     $elapsed = (Get-Date) - $StartTime
     $etaText = 'n/a'
 
-    if ($Current -gt 0 -and $Current -lt $Total) {
-        $avgSeconds = $elapsed.TotalSeconds / $Current
-        $remaining = [TimeSpan]::FromSeconds($avgSeconds * ($Total - $Current))
+    if ($Completed -gt 0 -and $Completed -lt $Total) {
+        $avgSeconds = $elapsed.TotalSeconds / $Completed
+        $remaining = [TimeSpan]::FromSeconds($avgSeconds * ($Total - $Completed))
         $etaText = $remaining.ToString('hh\:mm\:ss')
     }
 
-    Write-Host ("Progress: {0}/{1} ({2}%) | ETA {3} | {4}" -f $Current, $Total, $percent, $etaText, $CurrentFile) -ForegroundColor DarkCyan
+    Complete-InlineTelemetry
+    Write-Host ("Progress: {0}/{1} completed ({2}%) | ETA {3} | Current: {4}" -f $Completed, $Total, $percent, $etaText, $CurrentFile) -ForegroundColor DarkCyan
 }
 
 function Complete-VideoArchiveProgress {
     [CmdletBinding()]
     param()
+
+    Complete-InlineTelemetry
+}
+
+function Update-EncodeTelemetry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$Telemetry
+    )
+
+    $parts = @()
+    if ($null -ne $Telemetry.PercentText) {
+        $parts += $Telemetry.PercentText
+    }
+
+    if ($null -ne $Telemetry.FrameText) {
+        $parts += $Telemetry.FrameText
+    }
+
+    if ($null -ne $Telemetry.FpsText) {
+        $parts += "FPS $($Telemetry.FpsText)"
+    }
+
+    if ($null -ne $Telemetry.RemainText) {
+        $parts += "ETA $($Telemetry.RemainText)"
+    }
+
+    if ($null -ne $Telemetry.ElapsedText) {
+        $parts += "Elapsed $($Telemetry.ElapsedText)"
+    }
+
+    $message = 'Encoding: ' + ($parts -join ' | ')
+    Write-Host -NoNewline ("`r{0}   " -f $message) -ForegroundColor DarkYellow
+    $script:InlineTelemetryActive = $true
 }
 
 function Show-VideoArchiveSummary {
@@ -110,6 +161,7 @@ function Show-VideoArchiveSummary {
         [psobject]$Summary
     )
 
+    Complete-InlineTelemetry
     Write-Host ''
     Write-Host 'Summary' -ForegroundColor Cyan
     Write-Host ("Encoded : {0}" -f $Summary.Encoded)
@@ -120,4 +172,4 @@ function Show-VideoArchiveSummary {
     Write-Host ("SDR     : {0}" -f $Summary.Sdr)
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Update-VideoArchiveProgress, Complete-VideoArchiveProgress, Show-VideoArchiveSummary
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary
