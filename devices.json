@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "Default": {
+      "description": "Универсальный профиль"
+    },
+    "Honor": {
+      "description": "Honor/Huawei HDR Vivid / HLG"
+    },
+    "iPhone": {
+      "description": "iPhone HDR/Dolby Vision"
+    },
+    "GoPro": {
+      "description": "GoPro high bitrate action footage"
+    },
+    "DJI": {
+      "description": "DJI drone video"
+    }
+  }
+}

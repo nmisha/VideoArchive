@@ -1,0 +1,38 @@
+{
+  "Archive": {
+    "description": "Максимальное качество",
+    "qvbrHdr": 19,
+    "qvbrSdr": 19,
+    "nvPreset": "p7",
+    "lookahead": 32,
+    "multipass": "2pass-full",
+    "aqStrength": 8
+  },
+  "Balanced": {
+    "description": "Рекомендуемый баланс",
+    "qvbrHdr": 19,
+    "qvbrSdr": 19,
+    "nvPreset": "p5",
+    "lookahead": 16,
+    "multipass": "2pass-quarter",
+    "aqStrength": 8
+  },
+  "Fast": {
+    "description": "Быстро",
+    "qvbrHdr": 20,
+    "qvbrSdr": 20,
+    "nvPreset": "p4",
+    "lookahead": 8,
+    "multipass": "none",
+    "aqStrength": 8
+  },
+  "Storage": {
+    "description": "Максимальная экономия места",
+    "qvbrHdr": 21,
+    "qvbrSdr": 21,
+    "nvPreset": "p5",
+    "lookahead": 16,
+    "multipass": "2pass-quarter",
+    "aqStrength": 8
+  }
+}

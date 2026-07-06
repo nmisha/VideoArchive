@@ -1,0 +1,30 @@
+{
+  "appName": "VideoArchive",
+  "defaultPreset": "Balanced",
+  "extensions": [
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".m4v",
+    ".mts",
+    ".m2ts",
+    ".avi",
+    ".wmv",
+    ".webm"
+  ],
+  "output": {
+    "hdrSuffix": "_HDR_Encoded",
+    "sdrSuffix": "_SDR_Encoded",
+    "logsFolder": "Logs",
+    "tempFolder": "Temp"
+  },
+  "metadata": {
+    "copyAllMetadata": true,
+    "preserveWindowsTimestamps": true
+  },
+  "tools": {
+    "nvenc": "NVEncC/NVEncC64.exe",
+    "exiftool": "ExifTool/exiftool.exe",
+    "mediainfo": "MediaInfo/MediaInfo.exe"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "skipAv1": true,
+  "skipSmallFilesMb": 50,
+  "skipHevcBelowMbps1080p": 10,
+  "skipHevcBelowMbps4k": 35,
+  "skipHevcBelowMbps8k": 80,
+  "skipIfOutputExists": true,
+  "deleteOutputIfSavingsBelowPercent": 3
+}
