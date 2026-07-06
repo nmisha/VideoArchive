@@ -212,7 +212,14 @@ function Get-VideoInfo {
         throw "MediaInfo executable not found: $MediaInfoPath"
     }
 
-    $json = & $MediaInfoPath --Output=JSON --Full --Language=raw --BOM $Path 2>&1 | Out-String
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $json = & $MediaInfoPath --Output=JSON --Full --Language=raw --BOM $Path 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if ($LASTEXITCODE -ne 0) {
         throw "MediaInfo failed for '$Path': $json"
     }

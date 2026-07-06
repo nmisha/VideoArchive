@@ -106,6 +106,28 @@ function Remove-IfExists {
     }
 }
 
+function Get-ReadableErrorMessage {
+    param(
+        [Parameter(Mandatory)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord
+    )
+
+    $candidates = @(
+        $ErrorRecord.Exception.Message
+        $ErrorRecord.CategoryInfo.Reason
+        $ErrorRecord.ToString()
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    foreach ($candidate in $candidates) {
+        $normalized = (($candidate -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join ' | '
+        if (-not [string]::IsNullOrWhiteSpace($normalized) -and $normalized -notmatch '^-{10,}$') {
+            return $normalized
+        }
+    }
+
+    return 'Unknown error'
+}
+
 try {
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
     Test-VideoArchiveTools -Config $config | Out-Null
@@ -326,12 +348,13 @@ try {
                 -DryRunFlag $false)
         } catch {
             $summary.Failed++
-            Write-VideoArchiveStatus -Message ("Error: {0}" -f $_.Exception.Message) -Level Error
+            $errorMessage = Get-ReadableErrorMessage -ErrorRecord $_
+            Write-VideoArchiveStatus -Message ("Error: {0}" -f $errorMessage) -Level Error
             Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                 -SourcePath $file.Path `
                 -OutputPath $finalOutputFile `
                 -Action 'Failed' `
-                -Reason $_.Exception.Message `
+                -Reason $errorMessage `
                 -OutputGroup $null `
                 -Codec $null `
                 -BitrateMbps $null `

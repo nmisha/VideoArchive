@@ -51,7 +51,14 @@ function Copy-VideoMetadata {
         $DestinationFile
     )
 
-    $output = & $ExifToolPath @args 2>&1 | Out-String
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if ($LASTEXITCODE -ne 0) {
         throw "ExifTool failed for '$DestinationFile': $output"
     }

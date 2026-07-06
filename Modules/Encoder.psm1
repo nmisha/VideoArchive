@@ -111,9 +111,15 @@ function Invoke-EncodeJob {
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $arguments = @($Job.Arguments)
-    $log = & $Job.NvEncPath @arguments 2>&1 | Out-String
-    $exitCode = $LASTEXITCODE
-    $stopwatch.Stop()
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $log = & $Job.NvEncPath @arguments 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+        $stopwatch.Stop()
+    }
 
     [pscustomobject]@{
         Success = ($exitCode -eq 0)
