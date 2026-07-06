@@ -300,7 +300,7 @@ try {
             Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) | Out-Null
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
-            $validation = Test-EncodedVideo -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps)
 
             if (-not $validation.Success) {
                 $summary.Failed++
