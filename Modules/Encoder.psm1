@@ -35,13 +35,19 @@ function New-EncodeJob {
         [psobject]$Preset
     )
 
+    $qvbr = if ($VideoInfo.IsHdr) {
+        [string]$Preset.qvbrHdr
+    } else {
+        [string]$Preset.qvbrSdr
+    }
+
     $args = @(
         '--avsw'
         '-i', $InputFile
         '-o', $OutputFile
         '--codec', 'hevc'
         '--preset', [string]$Preset.nvPreset
-        '--qvbr', [string](if ($VideoInfo.IsHdr) { $Preset.qvbrHdr } else { $Preset.qvbrSdr })
+        '--qvbr', $qvbr
         '--lookahead', [string]$Preset.lookahead
         '--multipass', [string]$Preset.multipass
         '--aq'
