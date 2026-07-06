@@ -13,6 +13,42 @@ function Show-VideoArchiveBanner {
     Write-Host ''
 }
 
+function Select-VideoArchivePreset {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$PresetCatalog
+    )
+
+    Write-Host 'Available presets:' -ForegroundColor Cyan
+    for ($index = 0; $index -lt $PresetCatalog.Presets.Count; $index++) {
+        $preset = $PresetCatalog.Presets[$index]
+        $suffix = if ($preset.IsDefault) { ' [default]' } else { '' }
+        Write-Host ("{0}. {1} - {2}{3}" -f ($index + 1), $preset.Name, $preset.Description, $suffix)
+    }
+
+    Write-Host ''
+    $selection = Read-Host ("Select preset (1-{0}) or press Enter for {1}" -f $PresetCatalog.Presets.Count, $PresetCatalog.DefaultPreset)
+    if ([string]::IsNullOrWhiteSpace($selection)) {
+        return $PresetCatalog.DefaultPreset
+    }
+
+    $parsedIndex = 0
+    if ([int]::TryParse($selection, [ref]$parsedIndex)) {
+        if ($parsedIndex -ge 1 -and $parsedIndex -le $PresetCatalog.Presets.Count) {
+            return $PresetCatalog.Presets[$parsedIndex - 1].Name
+        }
+    }
+
+    foreach ($preset in $PresetCatalog.Presets) {
+        if ($preset.Name -ieq $selection.Trim()) {
+            return $preset.Name
+        }
+    }
+
+    throw "Invalid preset selection: $selection"
+}
+
 function Write-VideoArchiveStatus {
     [CmdletBinding()]
     param(
@@ -59,14 +95,12 @@ function Update-VideoArchiveProgress {
         $etaText = $remaining.ToString('hh\:mm\:ss')
     }
 
-    Write-Progress -Activity 'VideoArchive' -Status "$Current / $Total | ETA $etaText | $CurrentFile" -PercentComplete $percent
+    Write-Host ("Progress: {0}/{1} ({2}%) | ETA {3} | {4}" -f $Current, $Total, $percent, $etaText, $CurrentFile) -ForegroundColor DarkCyan
 }
 
 function Complete-VideoArchiveProgress {
     [CmdletBinding()]
     param()
-
-    Write-Progress -Activity 'VideoArchive' -Completed
 }
 
 function Show-VideoArchiveSummary {
@@ -86,4 +120,4 @@ function Show-VideoArchiveSummary {
     Write-Host ("SDR     : {0}" -f $Summary.Sdr)
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Write-VideoArchiveStatus, Update-VideoArchiveProgress, Complete-VideoArchiveProgress, Show-VideoArchiveSummary
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Update-VideoArchiveProgress, Complete-VideoArchiveProgress, Show-VideoArchiveSummary

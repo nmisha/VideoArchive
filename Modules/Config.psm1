@@ -77,6 +77,31 @@ function Import-VideoArchiveConfig {
     }
 }
 
+function Get-VideoArchivePresetCatalog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot
+    )
+
+    $resolvedRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
+    $config = Read-VideoArchiveJson -Path (Join-Path $resolvedRoot 'config.json')
+    $presets = Read-VideoArchiveJson -Path (Join-Path $resolvedRoot 'presets.json')
+
+    $items = foreach ($property in $presets.PSObject.Properties) {
+        [pscustomobject]@{
+            Name = $property.Name
+            Description = [string]$property.Value.description
+            IsDefault = ($property.Name -eq [string]$config.defaultPreset)
+        }
+    }
+
+    [pscustomobject]@{
+        DefaultPreset = [string]$config.defaultPreset
+        Presets = @($items)
+    }
+}
+
 function Test-VideoArchiveTools {
     [CmdletBinding()]
     param(
@@ -104,4 +129,4 @@ function Test-VideoArchiveTools {
     return $true
 }
 
-Export-ModuleMember -Function Import-VideoArchiveConfig, Test-VideoArchiveTools
+Export-ModuleMember -Function Import-VideoArchiveConfig, Get-VideoArchivePresetCatalog, Test-VideoArchiveTools

@@ -153,6 +153,11 @@ function Get-ReadableErrorMessage {
 }
 
 try {
+    if ([string]::IsNullOrWhiteSpace($Preset)) {
+        $presetCatalog = Get-VideoArchivePresetCatalog -ProjectRoot $projectRoot
+        $Preset = Select-VideoArchivePreset -PresetCatalog $presetCatalog
+    }
+
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
     Test-VideoArchiveTools -Config $config | Out-Null
 

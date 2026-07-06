@@ -1,6 +1,6 @@
 {
   "Archive": {
-    "description": "Максимальное качество",
+    "description": "Maximum quality",
     "qvbrHdr": 19,
     "qvbrSdr": 19,
     "nvPreset": "p7",
@@ -9,7 +9,7 @@
     "aqStrength": 8
   },
   "Balanced": {
-    "description": "Рекомендуемый баланс",
+    "description": "Recommended balance",
     "qvbrHdr": 19,
     "qvbrSdr": 19,
     "nvPreset": "p5",
@@ -18,7 +18,7 @@
     "aqStrength": 8
   },
   "Fast": {
-    "description": "Быстро",
+    "description": "Fast encoding",
     "qvbrHdr": 20,
     "qvbrSdr": 20,
     "nvPreset": "p4",
@@ -27,7 +27,7 @@
     "aqStrength": 8
   },
   "Storage": {
-    "description": "Максимальная экономия места",
+    "description": "Maximum space saving",
     "qvbrHdr": 21,
     "qvbrSdr": 21,
     "nvPreset": "p5",
