@@ -100,6 +100,40 @@ function Test-IsValidCaptureDate {
     return $true
 }
 
+function Get-VideoDateFromFileSystem {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [ValidateSet('disabled', 'creationTime', 'lastWriteTime')]
+        [string]$FallbackMode = 'disabled'
+    )
+
+    if ($FallbackMode -eq 'disabled') {
+        return New-CaptureDateResult -Success $false -DateTime $null -Source 'None' -Pattern $null -Warnings @('Filesystem date fallback is disabled.')
+    }
+
+    $file = Get-Item -LiteralPath $Path
+    $candidateDate = switch ($FallbackMode) {
+        'creationTime' { $file.CreationTime }
+        'lastWriteTime' { $file.LastWriteTime }
+        default { $null }
+    }
+
+    $pattern = switch ($FallbackMode) {
+        'creationTime' { 'FileSystemCreationTime' }
+        'lastWriteTime' { 'FileSystemLastWriteTime' }
+        default { $null }
+    }
+
+    if (Test-IsValidCaptureDate -Date $candidateDate -RawValue $candidateDate.ToString('s') -FileNameDate $null) {
+        return New-CaptureDateResult -Success $true -DateTime $candidateDate -Source 'FileSystem' -Pattern $pattern -Warnings @()
+    }
+
+    return New-CaptureDateResult -Success $false -DateTime $null -Source 'None' -Pattern $pattern -Warnings @("No valid filesystem date found for fallback mode '$FallbackMode'.")
+}
+
 function Get-VideoDateFromMetadata {
     [CmdletBinding()]
     param(
@@ -343,9 +377,15 @@ function Resolve-VideoCaptureDate {
         return $fileNameResult
     }
 
+    $fileSystemResult = Get-VideoDateFromFileSystem -Path $Path -FallbackMode ([string]$DateConfig.fileDateFallbackMode)
+    if ($fileSystemResult.Success) {
+        return $fileSystemResult
+    }
+
     $warnings = @()
     $warnings += @($metadataResult.Warnings)
     $warnings += @($fileNameResult.Warnings)
+    $warnings += @($fileSystemResult.Warnings)
     $warnings += 'Capture date could not be determined.'
     $warnings += 'Capture date was left empty.'
     return New-CaptureDateResult -Success $false -DateTime $null -Source 'None' -Pattern $null -Warnings $warnings

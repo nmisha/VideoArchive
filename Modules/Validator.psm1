@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Test-StringContainsNormalized {
     param(
@@ -38,6 +38,33 @@ function Test-StringEquivalentNormalized {
     return ($normalizedActual -eq $normalizedExpected) -or
         $normalizedActual.Contains($normalizedExpected) -or
         $normalizedExpected.Contains($normalizedActual)
+}
+
+function ConvertTo-TimezoneAdjustedDate {
+    param(
+        [Parameter(Mandatory)]
+        [datetime]$DateTime,
+
+        [string]$Offset = '+00:00'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Offset) -or $Offset -eq '+00:00') {
+        return $DateTime
+    }
+
+    $match = [regex]::Match($Offset.Trim(), '^(?<sign>[+\-])(?<hours>\d{2}):(?<minutes>\d{2})$')
+    if (-not $match.Success) {
+        return $DateTime
+    }
+
+    $hours = [int]$match.Groups['hours'].Value
+    $minutes = [int]$match.Groups['minutes'].Value
+    $timeSpan = New-TimeSpan -Hours $hours -Minutes $minutes
+    if ($match.Groups['sign'].Value -eq '-') {
+        $timeSpan = -$timeSpan
+    }
+
+    return $DateTime.Add($timeSpan)
 }
 
 function Test-MetadataPreserved {
@@ -216,7 +243,13 @@ function Test-FileTimestampsPreserved {
 
         [double]$LastWriteToleranceSeconds = 2,
 
-        [double]$LastAccessToleranceSeconds = 2
+        [double]$LastAccessToleranceSeconds = 2,
+
+        [Nullable[datetime]]$ExpectedCreationTime,
+
+        [Nullable[datetime]]$ExpectedLastWriteTime,
+
+        [Nullable[datetime]]$ExpectedLastAccessTime
     )
 
     $source = Get-Item -LiteralPath $SourceFile
@@ -224,19 +257,23 @@ function Test-FileTimestampsPreserved {
     $errors = New-Object System.Collections.Generic.List[string]
     $warnings = New-Object System.Collections.Generic.List[string]
 
-    $creationDelta = [math]::Abs(($source.CreationTime - $output.CreationTime).TotalSeconds)
+    $expectedCreationTime = if ($null -ne $ExpectedCreationTime) { $ExpectedCreationTime } else { $source.CreationTime }
+    $expectedLastWriteTime = if ($null -ne $ExpectedLastWriteTime) { $ExpectedLastWriteTime } else { $source.LastWriteTime }
+    $expectedLastAccessTime = if ($null -ne $ExpectedLastAccessTime) { $ExpectedLastAccessTime } else { $source.LastAccessTime }
+
+    $creationDelta = [math]::Abs(($expectedCreationTime - $output.CreationTime).TotalSeconds)
     if ($creationDelta -gt $CreationToleranceSeconds) {
-        $errors.Add("CreationTime mismatch: $($source.CreationTime) -> $($output.CreationTime) (delta ${creationDelta}s)")
+        $errors.Add("CreationTime mismatch: $($expectedCreationTime) -> $($output.CreationTime) (delta ${creationDelta}s)")
     }
 
-    $lastWriteDelta = [math]::Abs(($source.LastWriteTime - $output.LastWriteTime).TotalSeconds)
+    $lastWriteDelta = [math]::Abs(($expectedLastWriteTime - $output.LastWriteTime).TotalSeconds)
     if ($lastWriteDelta -gt $LastWriteToleranceSeconds) {
-        $errors.Add("LastWriteTime mismatch: $($source.LastWriteTime) -> $($output.LastWriteTime) (delta ${lastWriteDelta}s)")
+        $errors.Add("LastWriteTime mismatch: $($expectedLastWriteTime) -> $($output.LastWriteTime) (delta ${lastWriteDelta}s)")
     }
 
-    $lastAccessDelta = [math]::Abs(($source.LastAccessTime - $output.LastAccessTime).TotalSeconds)
+    $lastAccessDelta = [math]::Abs(($expectedLastAccessTime - $output.LastAccessTime).TotalSeconds)
     if ($lastAccessDelta -gt $LastAccessToleranceSeconds) {
-        $warnings.Add("LastAccessTime mismatch: $($source.LastAccessTime) -> $($output.LastAccessTime) (delta ${lastAccessDelta}s)")
+        $warnings.Add("LastAccessTime mismatch: $($expectedLastAccessTime) -> $($output.LastAccessTime) (delta ${lastAccessDelta}s)")
     }
 
     return [pscustomobject]@{
@@ -272,7 +309,12 @@ function Test-EncodedVideo {
 
         [psobject]$CaptureDateResult,
 
-        [bool]$StrictDateMode
+        [bool]$StrictDateMode,
+
+        [ValidateSet('preserve', 'captureDate')]
+        [string]$FileTimestampMode = 'preserve',
+
+        [string]$FileTimestampOffset = '+00:00'
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -367,7 +409,15 @@ function Test-EncodedVideo {
     }
 
     if ($ValidateTimestamps) {
-        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile
+        $expectedTimestamp = $null
+        if ($FileTimestampMode -eq 'captureDate' -and $null -ne $CaptureDateResult -and $CaptureDateResult.Success -and $null -ne $CaptureDateResult.DateTime) {
+            $expectedTimestamp = $CaptureDateResult.DateTime
+            if ($CaptureDateResult.Source -eq 'Metadata') {
+                $expectedTimestamp = ConvertTo-TimezoneAdjustedDate -DateTime $expectedTimestamp -Offset $FileTimestampOffset
+            }
+        }
+
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile -ExpectedCreationTime $expectedTimestamp -ExpectedLastWriteTime $expectedTimestamp -ExpectedLastAccessTime $expectedTimestamp
         foreach ($timestampError in @($timestampValidation.Errors)) {
             $errors.Add($timestampError)
         }

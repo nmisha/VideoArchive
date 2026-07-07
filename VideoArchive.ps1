@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InputPath,
     [string]$Preset,
     [switch]$Force,
@@ -474,14 +474,14 @@ try {
             }
 
             Move-Item -LiteralPath $tempOutputFile -Destination $finalOutputFile -Force
-            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) | Out-Null
+            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateSource ([string]$captureDateResult.Source) -CaptureDateOffset ([string]$config.Dates.defaultTimezoneOffset) | Out-Null
             if ($captureDateResult.Success -and $captureDateResult.Source -eq 'FileName') {
                 Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
             }
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
             $outputMetadata = Get-VideoMetadataSnapshot -Path $finalOutputFile -ExifToolPath $config.Tools.ExifTool
-            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode)
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -FileTimestampOffset ([string]$config.Dates.defaultTimezoneOffset)
 
             if (-not $validation.Success) {
                 $summary.Failed++

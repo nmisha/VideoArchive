@@ -1,37 +1,39 @@
-{
-  "appName": "VideoArchive",
-  "defaultPreset": "Balanced",
-  "extensions": [
-    ".mp4",
-    ".mov",
-    ".mkv",
-    ".m4v",
-    ".mts",
-    ".m2ts",
-    ".avi",
-    ".wmv",
-    ".webm"
-  ],
-  "output": {
-    "hdrSuffix": "_HDR_Encoded",
-    "sdrSuffix": "_SDR_Encoded",
-    "logsFolder": "Logs",
-    "tempFolder": "Temp"
+﻿{
+    "appName":  "VideoArchive",
+    "defaultPreset":  "Balanced",
+    "extensions":  [
+                       ".mp4",
+                       ".mov",
+                       ".mkv",
+                       ".m4v",
+                       ".mts",
+                       ".m2ts",
+                       ".avi",
+                       ".wmv",
+                       ".webm"
+                   ],
+    "output":  {
+                   "hdrSuffix":  "_HDR_Encoded",
+                   "sdrSuffix":  "_SDR_Encoded",
+                   "logsFolder":  "Logs",
+                   "tempFolder":  "Temp"
+               },
+    "metadata":  {
+                     "copyAllMetadata":  true,
+                     "preserveWindowsTimestamps":  true,
+                     "fileTimestampMode":  "captureDate"
+                 },
+    "dates":  {
+    "timezoneMode":  "none",
+    "defaultTimezoneOffset":  "+03:00",
+    "preferFileNameOverFileSystemDates":  true,
+    "fileDateFallbackMode":  "disabled",
+    "setAllCommonDateTags":  true,
+    "strictDateMode":  false
   },
-  "metadata": {
-    "copyAllMetadata": true,
-    "preserveWindowsTimestamps": true
-  },
-  "dates": {
-    "timezoneMode": "none",
-    "defaultTimezoneOffset": "+00:00",
-    "preferFileNameOverFileSystemDates": true,
-    "setAllCommonDateTags": true,
-    "strictDateMode": false
-  },
-  "tools": {
-    "nvenc": "NVEncC/NVEncC64.exe",
-    "exiftool": "ExifTool/exiftool.exe",
-    "mediainfo": "MediaInfo/MediaInfo.exe"
-  }
+    "tools":  {
+                  "nvenc":  "NVEncC/NVEncC64.exe",
+                  "exiftool":  "ExifTool/exiftool.exe",
+                  "mediainfo":  "MediaInfo/MediaInfo.exe"
+              }
 }

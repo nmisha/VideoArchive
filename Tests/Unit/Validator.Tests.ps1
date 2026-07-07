@@ -23,9 +23,9 @@ Describe 'Validator' {
         $sourceItem.CreationTime = [datetime]'2026-07-05T12:00:00'
         $sourceItem.LastWriteTime = [datetime]'2026-07-05T12:01:00'
         $sourceItem.LastAccessTime = [datetime]'2026-07-05T12:02:00'
-        $outputItem.CreationTime = $sourceItem.CreationTime
-        $outputItem.LastWriteTime = $sourceItem.LastWriteTime
-        $outputItem.LastAccessTime = $sourceItem.LastAccessTime
+        $outputItem.CreationTime = [datetime]'2026-07-05T15:03:00'
+        $outputItem.LastWriteTime = [datetime]'2026-07-05T15:03:00'
+        $outputItem.LastAccessTime = [datetime]'2026-07-05T15:03:00'
 
         $sourceInfo = [pscustomobject]@{
             Width = 3840
@@ -87,11 +87,48 @@ Describe 'Validator' {
             Warnings = @()
         }
 
-        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -FileTimestampMode captureDate -FileTimestampOffset '+03:00'
 
         $result.Success | Should Be $true
         $result.Errors.Count | Should Be 0
         ($result.Warnings -join ' | ') | Should Match 'HDR Vivid metadata were not preserved'
+    }
+
+    It 'does not apply timezone offset to filename-derived capture date' {
+        $sourceFile = Join-Path $tempRoot 'source_filename.mp4'
+        $outputFile = Join-Path $tempRoot 'output_filename.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $outputItem = Get-Item -LiteralPath $outputFile
+        $outputItem.CreationTime = [datetime]'2026-07-05T12:32:55'
+        $outputItem.LastWriteTime = [datetime]'2026-07-05T12:32:55'
+        $outputItem.LastAccessTime = [datetime]'2026-07-05T12:32:55'
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 30; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+        $outputInfo = $sourceInfo
+        $outputMetadata = [pscustomobject]@{
+            DateTaken = '2026-07-05T12:32:55'
+            QuickTimeMediaCreateDate = '2026-07-05T12:32:55'
+            QuickTimeCreateDate = '2026-07-05T12:32:55'
+            HasGps = $false
+        }
+        $captureDateResult = [pscustomobject]@{
+            Success = $true
+            DateTime = [datetime]'2026-07-05T12:32:55'
+            Source = 'FileName'
+            Pattern = 'VID_yyyyMMdd_HHmmss'
+            Warnings = @()
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -FileTimestampMode captureDate -FileTimestampOffset '+03:00'
+
+        $result.Success | Should Be $true
+        $result.Errors.Count | Should Be 0
     }
 
     It 'passes when LastAccessTime differs within tolerance' {

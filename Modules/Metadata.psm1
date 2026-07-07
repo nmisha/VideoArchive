@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Get-ExifToolValue {
     param(
@@ -57,6 +57,33 @@ function ConvertTo-NormalizedMetadataDate {
     return $text
 }
 
+function ConvertTo-TimezoneAdjustedDate {
+    param(
+        [Parameter(Mandatory)]
+        [datetime]$DateTime,
+
+        [string]$Offset = '+00:00'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Offset) -or $Offset -eq '+00:00') {
+        return $DateTime
+    }
+
+    $match = [regex]::Match($Offset.Trim(), '^(?<sign>[+\-])(?<hours>\d{2}):(?<minutes>\d{2})$')
+    if (-not $match.Success) {
+        return $DateTime
+    }
+
+    $hours = [int]$match.Groups['hours'].Value
+    $minutes = [int]$match.Groups['minutes'].Value
+    $timeSpan = New-TimeSpan -Hours $hours -Minutes $minutes
+    if ($match.Groups['sign'].Value -eq '-') {
+        $timeSpan = -$timeSpan
+    }
+
+    return $DateTime.Add($timeSpan)
+}
+
 function ConvertFrom-ExifToolJson {
     [CmdletBinding()]
     param(
@@ -109,11 +136,33 @@ function Set-FileSystemTimestamps {
         [string]$SourceFile,
 
         [Parameter(Mandatory)]
-        [string]$DestinationFile
+        [string]$DestinationFile,
+
+        [ValidateSet('preserve', 'captureDate')]
+        [string]$FileTimestampMode = 'captureDate',
+
+        [Nullable[datetime]]$CaptureDate,
+
+        [string]$CaptureDateSource = 'None',
+
+        [string]$CaptureDateOffset = '+00:00'
     )
 
     $source = Get-Item -LiteralPath $SourceFile
     $destination = Get-Item -LiteralPath $DestinationFile
+
+    if ($FileTimestampMode -eq 'captureDate' -and $null -ne $CaptureDate) {
+        $targetDate = $CaptureDate
+        if ($CaptureDateSource -eq 'Metadata') {
+            $targetDate = ConvertTo-TimezoneAdjustedDate -DateTime $CaptureDate -Offset $CaptureDateOffset
+        }
+
+        $destination.CreationTime = $targetDate
+        $destination.LastWriteTime = $targetDate
+        $destination.LastAccessTime = $targetDate
+        return
+    }
+
     $destination.CreationTime = $source.CreationTime
     $destination.LastWriteTime = $source.LastWriteTime
     $destination.LastAccessTime = $source.LastAccessTime
@@ -131,7 +180,16 @@ function Copy-VideoMetadata {
         [Parameter(Mandatory)]
         [string]$ExifToolPath,
 
-        [switch]$PreserveWindowsTimestamps
+        [switch]$PreserveWindowsTimestamps,
+
+        [ValidateSet('preserve', 'captureDate')]
+        [string]$FileTimestampMode = 'captureDate',
+
+        [Nullable[datetime]]$CaptureDate,
+
+        [string]$CaptureDateSource = 'None',
+
+        [string]$CaptureDateOffset = '+00:00'
     )
 
     if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
@@ -166,12 +224,11 @@ function Copy-VideoMetadata {
     }
 
     if ($PreserveWindowsTimestamps) {
-        Set-FileSystemTimestamps -SourceFile $SourceFile -DestinationFile $DestinationFile
+        Set-FileSystemTimestamps -SourceFile $SourceFile -DestinationFile $DestinationFile -FileTimestampMode $FileTimestampMode -CaptureDate $CaptureDate -CaptureDateSource $CaptureDateSource -CaptureDateOffset $CaptureDateOffset
     }
 
     return $output.Trim()
 }
-
 function Get-VideoMetadataSnapshot {
     [CmdletBinding()]
     param(

@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Resolve-VideoArchivePath {
     [CmdletBinding()]
@@ -68,14 +68,29 @@ function Import-VideoArchiveConfig {
             LogsFolder = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.output.logsFolder
             TempFolder = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.output.tempFolder
         }
-        Metadata = $config.metadata
+        Metadata = if ($null -ne $config.metadata) {
+            if ($null -eq $config.metadata.PSObject.Properties['fileTimestampMode']) {
+                Add-Member -InputObject $config.metadata -NotePropertyName fileTimestampMode -NotePropertyValue 'captureDate'
+            }
+            $config.metadata
+        } else {
+            [pscustomobject]@{
+                copyAllMetadata = $true
+                preserveWindowsTimestamps = $true
+                fileTimestampMode = 'captureDate'
+            }
+        }
         Dates = if ($null -ne $config.dates) {
+            if ($null -eq $config.dates.PSObject.Properties['fileDateFallbackMode']) {
+                Add-Member -InputObject $config.dates -NotePropertyName fileDateFallbackMode -NotePropertyValue 'disabled'
+            }
             $config.dates
         } else {
             [pscustomobject]@{
                 timezoneMode = 'none'
-                defaultTimezoneOffset = '+00:00'
+                defaultTimezoneOffset = '+03:00'
                 preferFileNameOverFileSystemDates = $true
+                fileDateFallbackMode = 'disabled'
                 setAllCommonDateTags = $true
                 strictDateMode = $false
             }

@@ -176,6 +176,68 @@ exit 0
         $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2026-07-05T10:00:00'
     }
 
+    It 'falls back to CreationTime only when explicitly enabled' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-empty-fallback.ps1'
+        @'
+$json = @"
+[
+  {
+  }
+]
+"@
+Write-Output $json
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+        $dateConfig = [pscustomobject]@{
+            defaultTimezoneOffset = '+00:00'
+            fileDateFallbackMode = 'creationTime'
+        }
+
+        $videoPath = Join-Path $tempRoot 'random_no_date.mp4'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+        $file = Get-Item -LiteralPath $videoPath
+        $file.CreationTime = [datetime]'2026-07-05T14:15:16'
+        $file.LastWriteTime = [datetime]'2026-07-06T01:02:03'
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.Success | Should Be $true
+        $result.Source | Should Be 'FileSystem'
+        $result.Pattern | Should Be 'FileSystemCreationTime'
+        $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2026-07-05T14:15:16'
+    }
+
+    It 'does not use CreationTime fallback when disabled' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-empty-disabled.ps1'
+        @'
+$json = @"
+[
+  {
+  }
+]
+"@
+Write-Output $json
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+        $dateConfig = [pscustomobject]@{
+            defaultTimezoneOffset = '+00:00'
+            fileDateFallbackMode = 'disabled'
+        }
+
+        $videoPath = Join-Path $tempRoot 'random_no_date_disabled.mp4'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+        $file = Get-Item -LiteralPath $videoPath
+        $file.CreationTime = [datetime]'2026-07-05T14:15:16'
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.Success | Should Be $false
+        $result.Source | Should Be 'None'
+        ($result.Warnings -join ' | ') | Should Match 'fallback is disabled'
+    }
+
     It 'returns warnings when neither metadata nor file name contain a valid date' {
         $toolPath = Join-Path $tempRoot 'fake-exiftool-empty.ps1'
         @'
@@ -191,6 +253,7 @@ exit 0
 
         $dateConfig = [pscustomobject]@{
             defaultTimezoneOffset = '+03:00'
+            fileDateFallbackMode = 'disabled'
         }
 
         $videoPath = Join-Path $tempRoot 'random_file.mp4'
