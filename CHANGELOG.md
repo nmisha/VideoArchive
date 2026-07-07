@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0
+
+- Added `Resume.psm1` for JSONL-based resume planning.
+- Added `-Resume`, `-ResumeFrom`, and `-ResumeMode` to the main workflow.
+- Added resume filtering before the encode loop so already completed files are not reprocessed unnecessarily.
+- Added source fingerprint checks based on path, size, and UTC timestamps.
+- Added preset-aware resume handling so encoded outputs from a different preset are not treated as completed.
+- Added explicit resume skip categories such as `ResumeCompleted`, `ResumeNoFailedRecord`, and `ResumeNotFailed`.
+- Extended JSONL/CSV records with `ResultClass`, `SkipCategory`, `PresetName`, source fingerprint fields, and exact output size bytes.
+- Added summary and log reporting for files skipped by resume state.
+- Added unit tests for completed, failed, stale, missing-output, and different-preset resume scenarios.
+
 ## 1.3.2
 
 - Added `metadata.fileTimestampMode` support for `preserve` and `captureDate`.

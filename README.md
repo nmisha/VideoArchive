@@ -18,6 +18,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Splits outputs into `_HDR_Encoded` and `_SDR_Encoded`.
 - Writes TXT, CSV, and JSONL logs.
 - Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
+- Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Validates encoded files before accepting them.
 
 ## Capture date behavior
@@ -116,6 +117,18 @@ Dry run:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -DryRun
+```
+
+Resume from the latest JSONL log:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -Resume
+```
+
+Resume from a specific log and only retry failed files:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -ResumeFrom ".\Logs\VideoArchive_20260707_120000.jsonl" -ResumeMode failed
 ```
 
 ## Presets

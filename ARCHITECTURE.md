@@ -6,6 +6,7 @@
 Console UI
   -> Config
   -> Scanner
+  -> Resume
   -> MediaAnalyzer
   -> DateResolver
   -> DecisionEngine
@@ -60,6 +61,27 @@ Returns `VideoInfo` with fields such as:
 - rotation;
 - HDR detection and `HdrType`;
 - audio track count and per-track audio info.
+
+### `Resume.psm1`
+
+Uses prior JSONL logs to decide which files should be processed in the current run.
+
+Responsibilities:
+
+- resolve the resume log path;
+- read JSONL history;
+- build latest-state lookup by `SourcePath`;
+- compare preset and source fingerprint;
+- skip already completed files safely;
+- select retry candidates for `failed`, `unfinished`, or `all` resume modes.
+
+Current completion rule:
+
+- last history action is `Encoded`;
+- validation passed;
+- current preset matches the history preset when available;
+- source fingerprint still matches;
+- output file still exists and is non-empty.
 
 ### `DateResolver.psm1`
 

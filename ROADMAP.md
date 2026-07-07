@@ -51,9 +51,10 @@ Goal: preserve useful dates and improve archive traceability.
 
 Goal: robust large-archive processing.
 
-- Resume from JSONL or SQLite.
-- Do not restart already successful files.
-- Separate resume handling for `Failed`, `Skipped`, and `Encoded`.
+- JSONL-based resume [Done]
+- Do not restart already successful files [Done]
+- Separate resume handling for `Failed`, `Skipped`, and `Encoded` [Done]
+- SQLite history [Planned]
 
 ## v1.5 - Better UI
 

@@ -21,6 +21,8 @@ function New-VideoFileRecord {
         RelativePath = $RelativePath
         SourceRoot = $SourceRoot
         SizeBytes = $File.Length
+        CreationTimeUtc = $File.CreationTimeUtc
+        LastWriteTimeUtc = $File.LastWriteTimeUtc
     }
 }
 

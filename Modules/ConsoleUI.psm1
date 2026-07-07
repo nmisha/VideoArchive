@@ -191,6 +191,9 @@ function Show-VideoArchiveSummary {
     Write-Host 'Summary' -ForegroundColor Cyan
     Write-Host ("Encoded : {0}" -f $Summary.Encoded)
     Write-Host ("Skipped : {0}" -f $Summary.Skipped)
+    if ($null -ne $Summary.PSObject.Properties['ResumeSkipped']) {
+        Write-Host ("ResSkip : {0}" -f $Summary.ResumeSkipped)
+    }
     Write-Host ("Failed  : {0}" -f $Summary.Failed)
     Write-Host ("DryRun  : {0}" -f $Summary.DryRun)
     Write-Host ("HDR     : {0}" -f $Summary.Hdr)

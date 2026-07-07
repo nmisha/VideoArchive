@@ -71,9 +71,12 @@
 
 ## v1.4 - Resume
 
-- [ ] Resume from JSONL or SQLite.
-- [ ] Do not restart already successful files.
-- [ ] Separate resume handling for `Failed`, `Skipped`, and `Encoded`.
+- [x] Resume from JSONL.
+- [ ] Resume from SQLite.
+- [x] Do not restart already successful files.
+- [x] Separate resume handling for `Failed`, `Skipped`, and `Encoded`.
+- [x] Add source fingerprint checks for safe resume.
+- [x] Add preset-aware resume safety.
 
 ## v1.5 - Better UI
 

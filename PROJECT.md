@@ -108,3 +108,9 @@ Each run produces:
 - TXT for human-readable history;
 - CSV for spreadsheet analysis;
 - JSONL for machine processing and future resume/history features.
+
+Current resume support:
+
+- JSONL-based resume is implemented;
+- completed files are not restarted when history, preset, fingerprint, and output existence still match;
+- SQLite-backed global history remains a later step.

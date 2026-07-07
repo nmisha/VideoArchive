@@ -3,7 +3,11 @@
     [string]$Preset,
     [switch]$Force,
     [switch]$NoSmartSkip,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$Resume,
+    [string]$ResumeFrom,
+    [ValidateSet('failed', 'unfinished', 'all')]
+    [string]$ResumeMode = 'unfinished'
 )
 
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -23,6 +27,7 @@ $requiredModules = @(
     'DecisionEngine.psm1',
     'Encoder.psm1',
     'DateResolver.psm1',
+    'Resume.psm1',
     'Metadata.psm1',
     'Logger.psm1',
     'ConsoleUI.psm1',
@@ -31,6 +36,43 @@ $requiredModules = @(
 
 foreach ($module in $requiredModules) {
     Import-Module (Join-Path -Path $moduleRoot -ChildPath $module) -Force
+}
+
+$script:VideoArchivePresetName = $null
+
+function Get-ResultClassForAction {
+    param([string]$Action)
+
+    switch ($Action) {
+        'Encoded' { return 'Success' }
+        'Failed' { return 'Failed' }
+        'DryRun' { return 'Planned' }
+        'Skip' { return 'Skipped' }
+        default { return 'Unknown' }
+    }
+}
+
+function Get-SkipCategoryFromContext {
+    param(
+        [string]$Action,
+        [string]$Reason
+    )
+
+    if ($Action -ne 'Skip' -or [string]::IsNullOrWhiteSpace($Reason)) {
+        return $null
+    }
+
+    if ($Reason -match 'Output already exists') { return 'ExistingOutput' }
+    if ($Reason -match 'Savings .* below threshold') { return 'SavingsBelowThreshold' }
+    if ($Reason -match 'below threshold') { return 'SmartSkip' }
+    if ($Reason -match 'smaller than') { return 'SmartSkip' }
+    if ($Reason -match 'AV1 source skipped') { return 'SmartSkip' }
+    if ($Reason -match 'strict date mode') { return 'StrictDateMode' }
+    if ($Reason -match 'Already completed in resume log') { return 'ResumeCompleted' }
+    if ($Reason -match 'No failed resume record') { return 'ResumeNoFailedRecord' }
+    if ($Reason -match "not 'Failed'") { return 'ResumeNotFailed' }
+
+    return 'GeneralSkip'
 }
 
 function New-VideoArchiveRecord {
@@ -70,8 +112,38 @@ function New-VideoArchiveRecord {
         [bool]$CaptureDateRecognized = $false,
         [string]$CaptureDateWarnings,
         [bool]$StrictDateMode = $false,
-        [bool]$DateValidationSuccess = $false
+        [bool]$DateValidationSuccess = $false,
+        [string]$ResultClass,
+        [string]$SkipCategory,
+        [string]$PresetName,
+        [Nullable[long]]$SourceFileSizeBytes,
+        [string]$SourceLastWriteTimeUtc,
+        [string]$SourceCreationTimeUtc,
+        [Nullable[long]]$OutputFileSizeBytes
     )
+
+    if ([string]::IsNullOrWhiteSpace($ResultClass)) {
+        $ResultClass = Get-ResultClassForAction -Action $Action
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SkipCategory)) {
+        $SkipCategory = Get-SkipCategoryFromContext -Action $Action -Reason $Reason
+    }
+
+    if ([string]::IsNullOrWhiteSpace($PresetName)) {
+        $PresetName = $script:VideoArchivePresetName
+    }
+
+    if (($null -eq $SourceFileSizeBytes -or [string]::IsNullOrWhiteSpace($SourceLastWriteTimeUtc) -or [string]::IsNullOrWhiteSpace($SourceCreationTimeUtc)) -and -not [string]::IsNullOrWhiteSpace($SourcePath) -and (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        $sourceItem = Get-Item -LiteralPath $SourcePath
+        if ($null -eq $SourceFileSizeBytes) { $SourceFileSizeBytes = $sourceItem.Length }
+        if ([string]::IsNullOrWhiteSpace($SourceLastWriteTimeUtc)) { $SourceLastWriteTimeUtc = $sourceItem.LastWriteTimeUtc.ToString('o') }
+        if ([string]::IsNullOrWhiteSpace($SourceCreationTimeUtc)) { $SourceCreationTimeUtc = $sourceItem.CreationTimeUtc.ToString('o') }
+    }
+
+    if ($null -eq $OutputFileSizeBytes -and -not [string]::IsNullOrWhiteSpace($OutputPath) -and (Test-Path -LiteralPath $OutputPath -PathType Leaf)) {
+        $OutputFileSizeBytes = (Get-Item -LiteralPath $OutputPath).Length
+    }
 
     [pscustomobject][ordered]@{
         Timestamp = Get-Date -Format 's'
@@ -111,6 +183,13 @@ function New-VideoArchiveRecord {
         CaptureDateWarnings = $CaptureDateWarnings
         StrictDateMode = $StrictDateMode
         DateValidationSuccess = $DateValidationSuccess
+        ResultClass = $ResultClass
+        SkipCategory = $SkipCategory
+        PresetName = $PresetName
+        SourceFileSizeBytes = $SourceFileSizeBytes
+        SourceLastWriteTimeUtc = $SourceLastWriteTimeUtc
+        SourceCreationTimeUtc = $SourceCreationTimeUtc
+        OutputFileSizeBytes = $OutputFileSizeBytes
     }
 }
 
@@ -207,6 +286,7 @@ try {
     }
 
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
+    $script:VideoArchivePresetName = $config.PresetName
     Test-VideoArchiveTools -Config $config | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
@@ -223,17 +303,32 @@ try {
     $outputRoots = Get-OutputRoots -ResolvedInputPath $resolvedInputPath -Config $config
 
     $files = @(Get-VideoFiles -InputPath $resolvedInputPath -Extensions $config.Extensions)
+    $resumeLogPath = $null
+    $resumePlan = $null
+    if ($Resume -or -not [string]::IsNullOrWhiteSpace($ResumeFrom)) {
+        $resumeLogPath = Resolve-ResumeLogPath -LogRoot $config.Output.LogsFolder -ResumeFrom $ResumeFrom
+        $resumePlan = Get-ResumePlan -Files $files -ResumeLogPath $resumeLogPath -ResumeMode $ResumeMode -PresetName $config.PresetName
+        $files = @($resumePlan.ScheduledFiles)
+    }
+
     $logger = Initialize-VideoArchiveLogger -LogRoot $config.Output.LogsFolder
     Show-VideoArchiveBanner -Config $config
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $($files.Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
 
-    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun"
+    if ($null -ne $resumePlan) {
+        Write-VideoArchiveStatus -Message "Resume: $resumeLogPath"
+        Write-VideoArchiveStatus -Message "Resume Mode: $ResumeMode"
+        Write-VideoArchiveStatus -Message "Resume Skipped: $($resumePlan.SkippedFiles.Count)"
+    }
+
+    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode"
 
     if ($files.Count -eq 0) {
-        Write-VideoArchiveStatus -Message 'No supported video files found.' -Level Warn
-        Write-LogMessage -Logger $logger -Message 'No supported video files found.'
+        $message = if ($null -ne $resumePlan) { 'No files scheduled after resume filtering.' } else { 'No supported video files found.' }
+        Write-VideoArchiveStatus -Message $message -Level Warn
+        Write-LogMessage -Logger $logger -Message $message
         exit 0
     }
 
@@ -242,11 +337,34 @@ try {
         Skipped = 0
         Failed = 0
         DryRun = 0
+        ResumeSkipped = 0
         Hdr = 0
         Sdr = 0
         CaptureDateMetadata = 0
         CaptureDateFileName = 0
         CaptureDateMissing = 0
+    }
+
+    if ($null -ne $resumePlan) {
+        foreach ($resumeSkip in @($resumePlan.SkippedFiles)) {
+            $summary.Skipped++
+            $summary.ResumeSkipped++
+            Write-VideoArchiveStatus -Message ("[resume] {0} -> Skip ({1})" -f $resumeSkip.File.RelativePath, $resumeSkip.Reason)
+            Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
+                -SourcePath $resumeSkip.File.Path `
+                -OutputPath $resumeSkip.OutputPath `
+                -Action 'Skip' `
+                -Reason $resumeSkip.Reason `
+                -DryRunFlag $false `
+                -CaptureDateRecognized $false `
+                -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                -DateValidationSuccess $false `
+                -SkipCategory $resumeSkip.SkipCategory `
+                -ResultClass 'Skipped' `
+                -SourceFileSizeBytes $resumeSkip.File.SizeBytes `
+                -SourceLastWriteTimeUtc $resumeSkip.File.LastWriteTimeUtc.ToString('o') `
+                -SourceCreationTimeUtc $resumeSkip.File.CreationTimeUtc.ToString('o'))
+        }
     }
 
     $runStart = Get-Date
@@ -657,7 +775,7 @@ try {
         }
     }
 
-    Write-LogMessage -Logger $logger -Message ("Run finished. Encoded={0} Skipped={1} Failed={2} DryRun={3}" -f $summary.Encoded, $summary.Skipped, $summary.Failed, $summary.DryRun)
+    Write-LogMessage -Logger $logger -Message ("Run finished. Encoded={0} Skipped={1} ResumeSkipped={2} Failed={3} DryRun={4}" -f $summary.Encoded, $summary.Skipped, $summary.ResumeSkipped, $summary.Failed, $summary.DryRun)
     Show-VideoArchiveSummary -Summary $summary
 } finally {
     Complete-VideoArchiveProgress
