@@ -1,0 +1,18 @@
+{
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "terminal.integrated.defaultProfile.windows": "Windows PowerShell UTF-8",
+  "terminal.integrated.profiles.windows": {
+    "Windows PowerShell UTF-8": {
+      "path": "powershell.exe",
+      "args": [
+        "-NoLogo",
+        "-NoExit",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\.vscode\\utf8-console.ps1"
+      ]
+    }
+  }
+}

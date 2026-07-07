@@ -15,8 +15,8 @@ Describe 'Validator' {
     It 'passes for preserved HDR parameters and timestamps' {
         $sourceFile = Join-Path $tempRoot 'source.mp4'
         $outputFile = Join-Path $tempRoot 'output.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceItem = Get-Item -LiteralPath $sourceFile
         $outputItem = Get-Item -LiteralPath $outputFile
@@ -87,8 +87,8 @@ Describe 'Validator' {
     It 'passes when LastAccessTime differs within tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_tolerant.mp4'
         $outputFile = Join-Path $tempRoot 'output_tolerant.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceItem = Get-Item -LiteralPath $sourceFile
         $outputItem = Get-Item -LiteralPath $outputFile
@@ -107,8 +107,8 @@ Describe 'Validator' {
     It 'passes when FPS delta is within tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_fps_ok.mp4'
         $outputFile = Join-Path $tempRoot 'output_fps_ok.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceInfo = [pscustomobject]@{
             Width = 3840
@@ -154,8 +154,8 @@ Describe 'Validator' {
     It 'fails when HDR metadata or timestamps are not preserved' {
         $sourceFile = Join-Path $tempRoot 'source_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_bad.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceItem = Get-Item -LiteralPath $sourceFile
         $outputItem = Get-Item -LiteralPath $outputFile
@@ -231,8 +231,8 @@ Describe 'Validator' {
     It 'fails when LastAccessTime exceeds tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_access_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_access_bad.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceItem = Get-Item -LiteralPath $sourceFile
         $outputItem = Get-Item -LiteralPath $outputFile
@@ -247,8 +247,8 @@ Describe 'Validator' {
     It 'fails when FPS delta exceeds tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_fps_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_fps_bad.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceInfo = [pscustomobject]@{
             Width = 3840
@@ -295,8 +295,8 @@ Describe 'Validator' {
     It 'fails when resolution differs' {
         $sourceFile = Join-Path $tempRoot 'source_resolution_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_resolution_bad.mp4'
-        Set-Content -LiteralPath $sourceFile -Value 'source'
-        Set-Content -LiteralPath $outputFile -Value 'output'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
         $sourceInfo = [pscustomobject]@{
             Width = 3840

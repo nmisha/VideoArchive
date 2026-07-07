@@ -20,7 +20,7 @@ function Initialize-VideoArchiveLogger {
         JsonlPath = "$basePath.jsonl"
     }
 
-    New-Item -ItemType File -Path $logger.TxtPath -Force | Out-Null
+    Set-Content -LiteralPath $logger.TxtPath -Value '' -Encoding utf8
     return $logger
 }
 
@@ -35,7 +35,7 @@ function Write-LogMessage {
     )
 
     $line = '[{0}] {1}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message
-    Add-Content -LiteralPath $Logger.TxtPath -Value $line
+    Add-Content -LiteralPath $Logger.TxtPath -Value $line -Encoding utf8
 }
 
 function Write-LogRecord {
@@ -51,7 +51,7 @@ function Write-LogRecord {
     $textLine = '[{0}] {1} | {2} | {3}' -f (
         Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     ), $Record.Action, $Record.SourcePath, $Record.Reason
-    Add-Content -LiteralPath $Logger.TxtPath -Value $textLine
+    Add-Content -LiteralPath $Logger.TxtPath -Value $textLine -Encoding utf8
 
     if (-not (Test-Path -LiteralPath $Logger.CsvPath -PathType Leaf)) {
         $Record | Export-Csv -LiteralPath $Logger.CsvPath -NoTypeInformation -Encoding UTF8
@@ -60,7 +60,7 @@ function Write-LogRecord {
     }
 
     $jsonLine = $Record | ConvertTo-Json -Depth 10 -Compress
-    Add-Content -LiteralPath $Logger.JsonlPath -Value $jsonLine
+    Add-Content -LiteralPath $Logger.JsonlPath -Value $jsonLine -Encoding utf8
 }
 
 Export-ModuleMember -Function Initialize-VideoArchiveLogger, Write-LogMessage, Write-LogRecord
