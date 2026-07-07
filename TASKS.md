@@ -51,11 +51,23 @@
 
 - [x] Add `DateResolver.psm1`.
 - [x] Resolve capture dates from metadata first and file names second.
-- [x] Avoid filesystem timestamps as capture date fallbacks.
+- [x] Keep filesystem date fallback disabled by default.
+- [x] Add opt-in `fileDateFallbackMode` for `creationTime` and `lastWriteTime`.
 - [x] Add `strictDateMode`.
 - [x] Restore output capture date tags when recovered from the file name.
 - [x] Log capture date source, pattern, warnings, and validation state.
 - [x] Validate recovered capture dates in output metadata.
+- [x] Add extended filename patterns including Imou, Insta360, and generic 17-digit timestamps.
+
+## v1.3.2 - Timestamp Policy and Date Semantics [Done]
+
+- [x] Add `metadata.fileTimestampMode` with `preserve` and `captureDate`.
+- [x] Default file timestamps to capture date.
+- [x] Apply timezone offset to Windows file timestamps for metadata-derived capture dates.
+- [x] Do not re-apply timezone offset for filename-derived capture dates.
+- [x] Validate file timestamps against the same policy used during metadata copy.
+- [x] Document that metadata and file name dates may legitimately differ.
+- [x] Keep `Media created` and Windows file timestamps as separate but related concepts.
 
 ## v1.4 - Resume
 

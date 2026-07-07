@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.2
+
+- Added `metadata.fileTimestampMode` support for `preserve` and `captureDate`.
+- Made `captureDate` the default Windows file timestamp policy.
+- Added timezone-aware file timestamp restoration for metadata-derived capture dates.
+- Explicitly avoided double timezone adjustment for filename-derived capture dates.
+- Added optional `dates.fileDateFallbackMode` with `disabled`, `creationTime`, and `lastWriteTime`.
+- Kept filesystem fallback disabled by default.
+- Updated validator so timestamp expectations follow the same runtime timestamp policy.
+- Added tests for metadata-derived timestamp offset behavior and filename-derived no-offset behavior.
+- Clarified in docs that metadata may represent media creation/finalization time while the filename may represent recording start time.
+- Clarified that `Media created` metadata and Windows `CreationTime` / `LastWriteTime` are related but not identical fields.
+
 ## 1.3.0
 
 - Expanded capture date filename parsing with `Imou_yyyyMMddHHmmssfff_prefix`, `Insta360_VID_yyyyMMdd_HHmmss_suffix`, explicit `VID_yyyyMMdd_HHmmss`, and final `Generic_yyyyMMddHHmmssfff` fallback.

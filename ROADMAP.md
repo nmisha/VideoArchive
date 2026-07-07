@@ -2,62 +2,85 @@
 
 ## v1.0 - Working CLI [Done]
 
-Цель: надежный консольный архиватор.
+Goal: reliable command-line archive workflow.
 
-- Модульная PowerShell-архитектура.
-- Анализ через MediaInfo.
-- Кодирование HEVC через NVEncC.
-- Копирование метаданных через ExifTool.
-- Разделение HDR и SDR.
-- Логи TXT, CSV и JSONL.
+- Modular PowerShell architecture.
+- Media analysis through `MediaInfo`.
+- HEVC encoding through `NVEncC`.
+- Metadata copy through `ExifTool`.
+- HDR and SDR output split.
+- TXT, CSV, and JSONL logs.
 
 ## v1.1 - Smart Processing [Done]
 
-Цель: не перекодировать лишнее.
+Goal: avoid unnecessary re-encoding.
 
 - Smart Skip.
-- Пропуск AV1.
-- Пороговые bitrate-решения для HEVC.
-- DryRun.
-- Force.
-- Объяснимые решения encode/skip.
+- Skip AV1.
+- Bitrate-based HEVC skip rules.
+- Skip existing outputs.
+- `-DryRun`
+- `-Force`
+- `-NoSmartSkip`
+- Explainable encode/skip decisions.
 
 ## v1.2 - Safety [Done]
 
-Цель: не испортить архив.
+Goal: do not damage the archive.
 
 - Validator.
-- Проверка сохранения HDR.
-- Проверка resolution и FPS.
-- Проверка аудиодорожек.
-- Проверка метаданных и дат файлов.
-- Автоматическое удаление результата при failed validation.
+- Resolution and FPS validation.
+- HDR preservation validation.
+- Audio validation.
+- Metadata and file timestamp validation.
+- Remove invalid outputs after failed validation.
 
-## v1.3 - Resume and History
+## v1.3 - Metadata and Capture Date [Done]
 
-Цель: надежная обработка больших архивов.
+Goal: preserve useful dates and improve archive traceability.
 
-- Resume.
-- JSONL state.
-- SQLite history.
-- Retry failed jobs.
+- Explicit HDR type classification.
+- Capture date recovery from metadata, file names, and optional filesystem fallback.
+- Strict date mode.
+- Capture date restoration to output metadata when needed.
+- Logging of capture date source, pattern, warnings, and validation state.
+- File timestamp policy based on preserved source dates or resolved capture date.
+- Timezone-aware Windows file timestamps for metadata-derived capture dates.
+
+## v1.4 - Resume
+
+Goal: robust large-archive processing.
+
+- Resume from JSONL or SQLite.
+- Do not restart already successful files.
+- Separate resume handling for `Failed`, `Skipped`, and `Encoded`.
+
+## v1.5 - Better UI
+
+Goal: better operator feedback during long runs.
+
+- Improve progress visualization.
+- Improve total ETA reporting.
+- Show before/after file size during processing.
+- Expand final HDR/SDR and date-source summary statistics.
 
 ## v2.0 - Multi Encoder
 
-Цель: поддержка разных аппаратных кодировщиков.
+Goal: support more hardware backends.
 
-- NVENC HEVC.
 - NVENC AV1.
 - Intel QSV.
 - AMD AMF.
 - Software x265 fallback.
+- Multi-GPU support.
 
 ## v3.0 - GUI
 
-Цель: удобное приложение.
+Goal: operator-friendly desktop workflow.
 
-- WPF/WinUI.
+- WPF or WinUI UI.
 - Drag and drop.
 - Preset editor.
 - Job queue.
 - Progress dashboard.
+- Log viewer and history browser.

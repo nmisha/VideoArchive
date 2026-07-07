@@ -1,114 +1,110 @@
-# VideoArchive — Project Specification
+# VideoArchive Project Specification
 
-## Назначение
+## Goal
 
-VideoArchive — профессиональная утилита для интеллектуального архивирования видео. Основная задача: уменьшить размер видеоархива без заметной потери качества, сохраняя HDR, цветовые характеристики, метаданные и даты файлов.
+VideoArchive is a PowerShell utility for video archive compression with strong safety rules.
 
-## Основные принципы
+Primary objective:
 
-1. Надежность важнее скорости.
-2. HDR нельзя случайно превратить в SDR.
-3. Разрешение и FPS нельзя менять без явного запроса пользователя.
-4. Метаданные должны сохраняться максимально полно.
-5. Решение кодировать или пропустить файл должно быть объяснимым.
-6. Архитектура должна быть модульной.
-7. Все настройки должны быть вынесены в JSON.
+- reduce file size;
+- preserve HDR/SDR behavior;
+- preserve source resolution and FPS;
+- preserve metadata and useful file dates;
+- make every skip or encode decision explainable.
 
-## Внешние инструменты
+## Core principles
 
-### MediaInfo CLI
+1. Reliability is more important than raw speed.
+2. HDR must not silently become SDR.
+3. Resolution and FPS must not change.
+4. Metadata preservation is part of the workflow, not an optional extra.
+5. Decisions must be transparent in console and logs.
+6. The codebase must stay modular.
+7. External tools are single-purpose and strictly separated.
 
-Используется только для анализа входного файла.
+## External tools
 
-Определяет:
+### `MediaInfo`
 
-- codec;
-- width;
-- height;
-- fps;
-- bit depth;
-- bitrate;
-- transfer characteristics;
-- color primaries;
-- matrix coefficients;
-- HDR format;
-- Dolby Vision;
-- HDR10/HDR10+;
-- HLG;
-- HDR Vivid.
+Used only for analysis.
 
-### NVEncC
+### `NVEncC`
 
-Используется только для кодирования.
+Used only for encoding.
 
-Для HDR:
+### `ExifTool`
 
-- HEVC Main10;
-- 10-bit;
-- transfer/colorprim/colormatrix auto.
+Used only for metadata copy and capture-date tag restoration.
 
-Для SDR:
+## Current behavior
 
-- HEVC Main;
-- 8-bit.
+### Encode policy
 
-### ExifTool
+- HDR -> HEVC Main10 10-bit
+- SDR -> HEVC Main 8-bit
+- audio -> copy
+- no resize
+- no FPS conversion
 
-Используется только после успешного кодирования.
+### Output structure
 
-Переносит:
-
-- QuickTime tags;
-- Keys;
-- XMP;
-- GPS;
-- camera make/model;
-- даты съемки;
-- прочие контейнерные теги.
-
-PowerShell затем восстанавливает CreationTime, LastWriteTime и LastAccessTime.
-
-## Выходные папки
-
-Для папки `D:\Video` автоматически создаются:
+For an input folder `D:\Video`, VideoArchive creates:
 
 ```text
 D:\Video_HDR_Encoded
 D:\Video_SDR_Encoded
 ```
 
-Структура вложенных каталогов сохраняется.
+Subfolder structure is preserved.
 
-## Smart Skip
+### Capture date policy
 
-По умолчанию включен. Может быть отключен параметром `-NoSmartSkip` или принудительным `-Force`.
+Capture date is resolved in this order:
 
-Должен пропускать:
+```text
+metadata -> filename -> filesystem fallback -> none
+```
 
-- AV1;
-- файлы меньше заданного размера;
-- HEVC с битрейтом ниже порога;
-- уже существующие выходные файлы.
+Notes:
 
-Каждый skip обязан иметь причину.
+- metadata currently has priority over file name;
+- this means that if filename and metadata differ, metadata wins;
+- in real files this may happen because filename can reflect recording start time while metadata may reflect media creation/finalization time;
+- filesystem fallback is opt-in through `dates.fileDateFallbackMode`;
+- if no date is found, the value stays empty and warnings are written;
+- if `strictDateMode=true`, files without capture date are not processed successfully.
 
-## Логи
+### File timestamp policy
 
-Каждый запуск создает:
+When `metadata.fileTimestampMode = captureDate`, Windows timestamps are derived from the resolved capture date.
 
-- TXT — человекочитаемый лог;
-- CSV — таблица для анализа;
-- JSONL — машинно-читаемый лог для дальнейшей автоматизации.
+Offset behavior:
 
-## Будущие расширения
+- metadata-derived capture dates receive `dates.defaultTimezoneOffset` when written to `CreationTime` / `LastWriteTime` / `LastAccessTime`;
+- filename-derived capture dates are not shifted again.
 
-- AV1 NVENC;
-- Intel QSV;
-- AMD AMF;
-- GUI;
-- SQLite история;
-- VMAF/SSIM/PSNR;
-- auto-QVBR;
-- queue manager;
-- resume после прерывания;
-- multi-GPU.
+This keeps `Media created` metadata and Windows filesystem timestamps aligned with expected local time without double-adjusting file names that already contain local time.
+
+## Validation policy
+
+Encoded outputs are validated for:
+
+- codec;
+- resolution;
+- FPS;
+- rotation;
+- HDR preservation;
+- bit depth;
+- transfer, primaries, and matrix;
+- audio codec and channels;
+- GPS and date metadata;
+- file timestamps;
+- capture date consistency.
+
+## Logging policy
+
+Each run produces:
+
+- TXT for human-readable history;
+- CSV for spreadsheet analysis;
+- JSONL for machine processing and future resume/history features.

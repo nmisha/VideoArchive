@@ -1,45 +1,84 @@
 # VideoArchive
 
-VideoArchive — универсальная PowerShell-утилита для интеллектуальной архивации видео с использованием NVIDIA NVENC через NVEncC.
+VideoArchive is a PowerShell-based video archiving utility that uses NVIDIA NVENC through `NVEncC`.
 
-Проект изначально появился как архиватор HDR-видео с Honor Magic 8 Pro, но архитектура рассчитана на любые источники: смартфоны, камеры, дроны, экшн-камеры, скачанные видео и домашние архивы.
+The project started as an HDR video archiver, but the current architecture is generic enough for phones, cameras, drones, action cameras, exports, and mixed home archives.
 
-## Что делает
+## What it does
 
-- Рекурсивно обрабатывает файл или папку.
-- Анализирует видео через MediaInfo CLI.
-- Автоматически определяет HDR/SDR, HLG, HDR10, HDR10+, HDR Vivid, Dolby Vision.
-- HDR кодирует в HEVC Main10 10-bit.
-- SDR кодирует в HEVC Main 8-bit.
-- Сохраняет исходное разрешение и FPS.
-- Копирует аудио без перекодирования.
-- Копирует метаданные через ExifTool.
-- Восстанавливает даты файла Windows.
-- Создает отдельные папки для HDR и SDR.
-- Ведет TXT, CSV и JSONL логи.
-- Поддерживает Smart Skip: пропуск AV1, маленьких файлов, уже эффективно сжатого HEVC и уже существующих результатов.
+- Recursively processes a file or folder.
+- Uses `MediaInfo` for video analysis only.
+- Uses `NVEncC` for encoding only.
+- Uses `ExifTool` for metadata copy and capture-date restoration only.
+- Detects `HDR Vivid`, `Dolby Vision`, `HDR10+`, `HLG`, `PQ`, and `SDR`.
+- Encodes HDR to HEVC Main10 10-bit.
+- Encodes SDR to HEVC Main 8-bit.
+- Preserves source resolution and FPS.
+- Copies audio without re-encoding.
+- Splits outputs into `_HDR_Encoded` and `_SDR_Encoded`.
+- Writes TXT, CSV, and JSONL logs.
+- Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
+- Validates encoded files before accepting them.
 
-## Структура
+## Capture date behavior
+
+VideoArchive resolves capture date in this order:
+
+```text
+metadata -> filename -> filesystem fallback -> none
+```
+
+Important details:
+
+- metadata currently has priority over file name;
+- this means a file name like `20260411_235932.mp4` can lose to metadata if the metadata date is considered valid;
+- this is intentional because many containers carry a real media timestamp, while file names can be export-generated;
+- in some devices the opposite is also possible: filename can represent recording start time while metadata may represent recording end or finalization time.
+
+If no date is resolved:
+
+- the capture date stays empty;
+- a warning is written to console and logs;
+- if `strictDateMode=true`, the file is treated as a strict-date failure.
+
+## File timestamp behavior
+
+When `metadata.fileTimestampMode = "captureDate"`:
+
+- `CreationTime`
+- `LastWriteTime`
+- `LastAccessTime`
+
+are set from the resolved capture date.
+
+Timezone offset behavior:
+
+- metadata-derived dates are shifted by `dates.defaultTimezoneOffset` before writing Windows file timestamps;
+- filename-derived dates are not shifted again.
+
+This is done to avoid double-adjusting file names that already contain local time.
+
+## Project structure
 
 ```text
 VideoArchive/
-├── VideoArchive.ps1
-├── VideoArchive.cmd
-├── config.json
-├── presets.json
-├── smartskip.json
-├── devices.json
-├── Modules/
-├── Tests/
-├── Docs/
-├── NVEncC/
-├── ExifTool/
-└── MediaInfo/
+|-- VideoArchive.ps1
+|-- VideoArchive.cmd
+|-- config.json
+|-- presets.json
+|-- smartskip.json
+|-- devices.json
+|-- Modules/
+|-- Tests/
+|-- Docs/
+|-- NVEncC/
+|-- ExifTool/
+`-- MediaInfo/
 ```
 
-## Зависимости
+## Requirements
 
-Положить рядом с проектом:
+Place these tools in the project directory:
 
 ```text
 NVEncC/NVEncC64.exe
@@ -47,45 +86,49 @@ ExifTool/exiftool.exe
 MediaInfo/MediaInfo.exe
 ```
 
-## Запуск
+## Run
 
-Интерактивно:
+Interactive:
 
 ```powershell
 .\VideoArchive.cmd
 ```
 
-или:
+Direct PowerShell:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1
 ```
 
-С параметрами:
+With explicit input and preset:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 "D:\PhoneVideo" -Preset Balanced
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -Preset Balanced
 ```
 
-Принудительно перекодировать всё:
+Force re-encode:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 "D:\PhoneVideo" -Preset Archive -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -Preset Archive -Force
 ```
 
-Пробный запуск без кодирования:
+Dry run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 "D:\PhoneVideo" -DryRun
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -DryRun
 ```
 
-## Пресеты
+## Presets
 
-- `Archive` — максимальное качество.
-- `Balanced` — рекомендуемый баланс качества, скорости и размера.
-- `Fast` — быстрое кодирование.
-- `Storage` — максимальная экономия места.
+- `Archive` - Maximum quality for long-term archive
+- `Balanced` - Recommended balance
+- `Fast` - Fast encode
+- `Storage` - Maximum compression
 
-## Важное
+## Notes
 
-VideoArchive не меняет разрешение и FPS. Если исходник 3840×2160 59.94 FPS, результат остается 3840×2160 59.94 FPS.
+- VideoArchive does not resize video.
+- VideoArchive does not change FPS.
+- Audio stays in copy mode.
+- Validation happens after encode and metadata copy.
+- `HDR Vivid -> HLG` is treated as a warning when base HDR is preserved.

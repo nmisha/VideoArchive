@@ -1,178 +1,236 @@
 # Architecture
 
-## Общий пайплайн
+## Pipeline
 
 ```text
 Console UI
-   ↓
-Config Loader
-   ↓
-Scanner
-   ↓
-Media Analyzer
-   ↓
-Decision Engine
-   ↓
-Encoder
-   ↓
-Metadata Copier
-   ↓
-Validator
-   ↓
-Logger
+  -> Config
+  -> Scanner
+  -> MediaAnalyzer
+  -> DateResolver
+  -> DecisionEngine
+  -> Encoder
+  -> Metadata
+  -> Validator
+  -> Logger
 ```
 
-## Модули
+`VideoArchive.ps1` owns the workflow and orchestration. Modules stay focused and do not coordinate each other directly.
 
-### Config.psm1
+## Modules
 
-Отвечает за загрузку:
+### `Config.psm1`
 
-- config.json;
-- presets.json;
-- smartskip.json;
-- devices.json.
+Loads and normalizes:
 
-Не должен содержать бизнес-логику кодирования.
+- `config.json`
+- `presets.json`
+- `smartskip.json`
+- `devices.json`
 
-### Scanner.psm1
+Responsibilities:
 
-Отвечает за поиск файлов.
+- resolve tool paths;
+- inject defaults for missing config keys;
+- expose one runtime config object.
 
-Вход:
+### `Scanner.psm1`
 
-- файл;
-- папка.
+Finds supported video files from:
 
-Выход:
+- a single file path;
+- a folder path.
 
-- список `VideoFile`.
+Returns a list of file records with source path and relative path. It does not analyze media.
 
-Не анализирует HDR/SDR.
+### `MediaAnalyzer.psm1`
 
-### MediaAnalyzer.psm1
+Uses `MediaInfo` only.
 
-Использует MediaInfo CLI.
+Returns `VideoInfo` with fields such as:
 
-Возвращает объект `VideoInfo`.
+- codec;
+- width and height;
+- fps;
+- bitrate;
+- bit depth;
+- transfer;
+- primaries;
+- matrix;
+- rotation;
+- HDR detection and `HdrType`;
+- audio track count and per-track audio info.
 
-Пример:
+### `DateResolver.psm1`
 
-```powershell
-[pscustomobject]@{
-    Path        = "D:\Video\VID.mp4"
-    Codec       = "HEVC"
-    Width       = 3840
-    Height      = 2160
-    Fps         = 59.94
-    BitDepth    = 10
-    BitrateMbps = 77.2
-    Transfer    = "HLG"
-    Primaries   = "BT.2020"
-    Matrix      = "BT.2020 non-constant"
-    HDRFormat   = "HDR Vivid"
-    IsHdr       = $true
-    HdrType     = "HLG"
-}
-```
-
-### DecisionEngine.psm1
-
-Принимает `VideoInfo` и правила Smart Skip.
-
-Возвращает `Decision`.
-
-```powershell
-[pscustomobject]@{
-    Action = "Encode" # Encode | Skip
-    Reason = "HEVC 77 Mbps > 35 Mbps threshold"
-    OutputGroup = "HDR"
-}
-```
-
-DecisionEngine ничего не знает о параметрах NVEncC.
-
-### Encoder.psm1
-
-Принимает `EncodeJob`.
-
-Возвращает `EncodeResult`.
-
-```powershell
-[pscustomobject]@{
-    Success = $true
-    ExitCode = 0
-    OutputFile = "..."
-    Duration = "00:01:33"
-}
-```
-
-### Metadata.psm1
-
-Копирует метаданные через ExifTool.
-
-Не должен знать, HDR это или SDR.
-
-### Validator.psm1
-
-Проверяет результат после кодирования:
-
-- файл существует;
-- размер > 0;
-- разрешение совпадает;
-- FPS совпадает;
-- HDR не потерян;
-- битность для HDR = 10;
-- аудио дорожки сохранены.
-
-### Logger.psm1
-
-Пишет:
-
-- TXT;
-- CSV;
-- JSONL.
-
-### ConsoleUI.psm1
-
-Только интерфейс:
-
-- меню;
-- прогресс;
-- ETA;
-- итоговая сводка.
-
-## Правила зависимости
-
-Модули не должны импортировать друг друга хаотично.
-
-Главный скрипт `VideoArchive.ps1` orchestrates modules.
-
-Предпочтительный поток данных:
+Resolves `CaptureDate` in this order:
 
 ```text
-VideoArchive.ps1 owns the workflow
-Modules are pure helpers where possible
+metadata -> filename -> filesystem fallback -> none
 ```
 
-## Объекты данных
+Important behavior:
 
-### VideoInfo
+- metadata has higher priority than file name;
+- filename dates are used when metadata are missing or invalid;
+- filesystem dates are used only when `dates.fileDateFallbackMode` explicitly enables them;
+- `LastWriteTime`, `CreationTime`, and `FileModifyDate` are never used implicitly;
+- if `strictDateMode=true` and no date is resolved, the file is skipped/failed by policy.
 
-Результат анализа.
+Current filename coverage includes:
 
-### EncodeDecision
+- `VID_yyyyMMdd_HHmmss`
+- `Insta360_VID_yyyyMMdd_HHmmss_suffix`
+- `Imou_yyyyMMddHHmmssfff_prefix`
+- `Generic_yyyyMMddHHmmssfff`
+- several Android, DJI, GoPro, WhatsApp, Telegram, and Signal patterns
 
-Решение: кодировать или пропустить.
+Architectural note:
 
-### EncodeJob
+- file name may represent recording start time;
+- metadata may represent media creation/finalization time;
+- the system currently trusts metadata first and logs the chosen source.
 
-Полный набор параметров для кодирования.
+### `DecisionEngine.psm1`
 
-### EncodeResult
+Decides whether to encode or skip.
 
-Итог кодирования.
+Inputs:
 
-### LogRecord
+- `VideoInfo`
+- Smart Skip rules
+- CLI overrides such as `-Force` and `-NoSmartSkip`
 
-Единая структура для CSV/JSONL.
+Returns:
+
+- `Action`
+- `Reason`
+- `OutputGroup`
+
+It does not know how `NVEncC` arguments are built.
+
+### `Encoder.psm1`
+
+Uses `NVEncC` only.
+
+Builds an `EncodeJob` and runs it. Also parses live encoder telemetry for:
+
+- percent;
+- frames;
+- fps;
+- per-file ETA;
+- elapsed time.
+
+Rules:
+
+- no resize;
+- no FPS conversion;
+- HDR encodes to HEVC Main10 10-bit;
+- SDR encodes to HEVC Main 8-bit;
+- audio stays in copy mode.
+
+### `Metadata.psm1`
+
+Uses `ExifTool` only.
+
+Responsibilities:
+
+- copy metadata from source to encoded file;
+- expose metadata snapshot for validation;
+- restore filesystem timestamps according to `metadata.fileTimestampMode`.
+
+Current timestamp behavior:
+
+- `preserve`: copy source `CreationTime`, `LastWriteTime`, `LastAccessTime`;
+- `captureDate`: set file timestamps from resolved capture date.
+
+Timezone behavior for file timestamps:
+
+- if capture date source is `Metadata`, apply `dates.defaultTimezoneOffset` to Windows file timestamps;
+- if capture date source is `FileName`, do not apply offset again;
+- this avoids double-shifting file names that already contain local time.
+
+### `Validator.psm1`
+
+Validates encoded outputs after metadata copy.
+
+Checks:
+
+- output file exists and size is non-zero;
+- resolution matches;
+- FPS matches within tolerance;
+- rotation matches;
+- output codec is HEVC;
+- HDR is not lost;
+- HDR stays 10-bit or better;
+- SDR stays 8-bit;
+- transfer, primaries, and matrix stay compatible;
+- audio codec and channels match per track;
+- metadata date and GPS survive;
+- file timestamps match the configured policy;
+- recovered capture date matches output metadata within tolerance.
+
+Special case:
+
+- `HDR Vivid -> HLG` is allowed as a warning when base HDR is preserved.
+
+### `Logger.psm1`
+
+Writes:
+
+- TXT
+- CSV
+- JSONL
+
+Logs include:
+
+- encode/skip/fail decision;
+- size and savings;
+- validation warnings and errors;
+- source and output HDR fields;
+- capture date, source, pattern, and warnings.
+
+### `ConsoleUI.psm1`
+
+Handles console-only interaction:
+
+- banner;
+- preset menu;
+- status lines;
+- plain-text progress;
+- live encoding telemetry;
+- final summary.
+
+## Data contracts
+
+### `VideoInfo`
+
+Media analysis result from `MediaAnalyzer`.
+
+### `CaptureDateResult`
+
+Date resolution result from `DateResolver`.
+
+Fields:
+
+- `Success`
+- `DateTime`
+- `Source`
+- `Pattern`
+- `Warnings`
+
+### `EncodeDecision`
+
+Skip/encode decision with reason.
+
+### `EncodeJob`
+
+Full encoder command description.
+
+### `EncodeResult`
+
+Encoder execution result with exit code, duration, log, and final output path.
+
+### `LogRecord`
+
+Unified record for TXT/CSV/JSONL logging.
