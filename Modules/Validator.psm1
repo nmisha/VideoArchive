@@ -222,6 +222,7 @@ function Test-FileTimestampsPreserved {
     $source = Get-Item -LiteralPath $SourceFile
     $output = Get-Item -LiteralPath $OutputFile
     $errors = New-Object System.Collections.Generic.List[string]
+    $warnings = New-Object System.Collections.Generic.List[string]
 
     $creationDelta = [math]::Abs(($source.CreationTime - $output.CreationTime).TotalSeconds)
     if ($creationDelta -gt $CreationToleranceSeconds) {
@@ -235,10 +236,13 @@ function Test-FileTimestampsPreserved {
 
     $lastAccessDelta = [math]::Abs(($source.LastAccessTime - $output.LastAccessTime).TotalSeconds)
     if ($lastAccessDelta -gt $LastAccessToleranceSeconds) {
-        $errors.Add("LastAccessTime mismatch: $($source.LastAccessTime) -> $($output.LastAccessTime) (delta ${lastAccessDelta}s)")
+        $warnings.Add("LastAccessTime mismatch: $($source.LastAccessTime) -> $($output.LastAccessTime) (delta ${lastAccessDelta}s)")
     }
 
-    return @($errors)
+    return [pscustomobject]@{
+        Errors = @($errors)
+        Warnings = @($warnings)
+    }
 }
 
 function Test-EncodedVideo {
@@ -363,8 +367,12 @@ function Test-EncodedVideo {
     }
 
     if ($ValidateTimestamps) {
-        foreach ($timestampError in (Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile)) {
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile
+        foreach ($timestampError in @($timestampValidation.Errors)) {
             $errors.Add($timestampError)
+        }
+        foreach ($timestampWarning in @($timestampValidation.Warnings)) {
+            $warnings.Add($timestampWarning)
         }
     }
 

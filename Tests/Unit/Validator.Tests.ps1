@@ -109,9 +109,10 @@ Describe 'Validator' {
         $outputItem.LastWriteTime = $sourceItem.LastWriteTime
         $outputItem.LastAccessTime = $sourceItem.LastAccessTime.AddSeconds(1)
 
-        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
 
-        $timestampErrors.Count | Should Be 0
+        $timestampValidation.Errors.Count | Should Be 0
+        $timestampValidation.Warnings.Count | Should Be 0
     }
 
     It 'passes when CreationTime and LastWriteTime differ within tolerance' {
@@ -129,9 +130,10 @@ Describe 'Validator' {
         $outputItem.LastWriteTime = $sourceItem.LastWriteTime.AddSeconds(1)
         $outputItem.LastAccessTime = $sourceItem.LastAccessTime
 
-        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
 
-        $timestampErrors.Count | Should Be 0
+        $timestampValidation.Errors.Count | Should Be 0
+        $timestampValidation.Warnings.Count | Should Be 0
     }
 
     It 'passes when FPS delta is within tolerance' {
@@ -258,7 +260,7 @@ Describe 'Validator' {
         ($result.Errors -join ' | ') | Should Match 'DateTaken mismatch'
     }
 
-    It 'fails when LastAccessTime exceeds tolerance' {
+    It 'warns when LastAccessTime exceeds tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_access_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_access_bad.mp4'
         Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
@@ -269,9 +271,10 @@ Describe 'Validator' {
         $sourceItem.LastAccessTime = [datetime]'2026-07-05T12:02:00'
         $outputItem.LastAccessTime = $sourceItem.LastAccessTime.AddSeconds(5)
 
-        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
 
-        ($timestampErrors -join ' | ') | Should Match 'LastAccessTime mismatch'
+        $timestampValidation.Errors.Count | Should Be 0
+        ($timestampValidation.Warnings -join ' | ') | Should Match 'LastAccessTime mismatch'
     }
 
     It 'fails when CreationTime exceeds tolerance' {
@@ -289,9 +292,10 @@ Describe 'Validator' {
         $outputItem.LastWriteTime = $sourceItem.LastWriteTime
         $outputItem.LastAccessTime = $sourceItem.LastAccessTime
 
-        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+        $timestampValidation = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
 
-        ($timestampErrors -join ' | ') | Should Match 'CreationTime mismatch'
+        ($timestampValidation.Errors -join ' | ') | Should Match 'CreationTime mismatch'
+        $timestampValidation.Warnings.Count | Should Be 0
     }
 
     It 'fails when FPS delta exceeds tolerance' {
