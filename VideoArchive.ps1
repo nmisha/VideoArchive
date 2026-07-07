@@ -343,6 +343,12 @@ try {
         CaptureDateMetadata = 0
         CaptureDateFileName = 0
         CaptureDateMissing = 0
+        TotalSourceMb = 0.0
+        TotalOutputMb = 0.0
+        TotalSavingsPercent = 0.0
+        AverageEncodedSavingsPercent = 0.0
+        FilesPerMinute = 0.0
+        TotalElapsed = [TimeSpan]::Zero
     }
 
     if ($null -ne $resumePlan) {
@@ -367,12 +373,17 @@ try {
         }
     }
 
+    $totalSourceBytes = (@($files) | Measure-Object -Property SizeBytes -Sum).Sum
+    $processedSourceBytes = 0L
+    $encodedSourceBytes = 0L
+    $encodedOutputBytes = 0L
+    $encodedSavingsSum = 0.0
     $runStart = Get-Date
     $completedCount = 0
 
     for ($index = 0; $index -lt $files.Count; $index++) {
         $file = $files[$index]
-        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart
+        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart -ProcessedSourceMb ([math]::Round($processedSourceBytes / 1MB, 2)) -TotalSourceMb ([math]::Round($totalSourceBytes / 1MB, 2))
 
         $tempOutputFile = $null
         $finalOutputFile = $null
@@ -446,6 +457,7 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $false)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
@@ -492,6 +504,7 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $captureDateResult.Success)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
@@ -535,6 +548,7 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $captureDateResult.Success)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
@@ -583,6 +597,7 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $false)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
@@ -641,6 +656,7 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $false)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
@@ -656,6 +672,7 @@ try {
             if ($smartSkipActive -and $savingsPercent -lt [double]$config.SmartSkip.deleteOutputIfSavingsBelowPercent) {
                 Remove-IfExists -Path $finalOutputFile
                 $summary.Skipped++
+                Write-FileResultStatus -FileName $file.RelativePath -Action 'Discarded' -SourceSizeMb $sourceSizeMb -OutputSizeMb $outputSizeMb -SavingsPercent $savingsPercent -Duration $encodeResult.Duration
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `
@@ -694,10 +711,16 @@ try {
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
                     -DateValidationSuccess $validation.Success)
                 $completedCount++
+                $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
             $summary.Encoded++
+            $processedSourceBytes += [long]$file.SizeBytes
+            $encodedSourceBytes += (Get-Item -LiteralPath $file.Path).Length
+            $encodedOutputBytes += (Get-Item -LiteralPath $finalOutputFile).Length
+            $encodedSavingsSum += $savingsPercent
+            Write-FileResultStatus -FileName $file.RelativePath -Action 'Encoded' -SourceSizeMb $sourceSizeMb -OutputSizeMb $outputSizeMb -SavingsPercent $savingsPercent -Duration $encodeResult.Duration
             Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                 -SourcePath $file.Path `
                 -OutputPath $finalOutputFile `
@@ -772,7 +795,21 @@ try {
                 -OutputBitDepth $null)
             Remove-IfExists -Path $tempOutputFile
             $completedCount++
+            $processedSourceBytes += [long]$file.SizeBytes
         }
+    }
+
+    $summary.TotalElapsed = (Get-Date) - $runStart
+    $summary.TotalSourceMb = [math]::Round($totalSourceBytes / 1MB, 2)
+    $summary.TotalOutputMb = [math]::Round($encodedOutputBytes / 1MB, 2)
+    if ($encodedSourceBytes -gt 0) {
+        $summary.TotalSavingsPercent = [math]::Round((($encodedSourceBytes - $encodedOutputBytes) / $encodedSourceBytes) * 100, 2)
+    }
+    if ($summary.Encoded -gt 0) {
+        $summary.AverageEncodedSavingsPercent = [math]::Round(($encodedSavingsSum / $summary.Encoded), 2)
+    }
+    if ($summary.TotalElapsed.TotalMinutes -gt 0) {
+        $summary.FilesPerMinute = [math]::Round(($completedCount / $summary.TotalElapsed.TotalMinutes), 2)
     }
 
     Write-LogMessage -Logger $logger -Message ("Run finished. Encoded={0} Skipped={1} ResumeSkipped={2} Failed={3} DryRun={4}" -f $summary.Encoded, $summary.Skipped, $summary.ResumeSkipped, $summary.Failed, $summary.DryRun)

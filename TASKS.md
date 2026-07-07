@@ -80,10 +80,12 @@
 
 ## v1.5 - Better UI
 
-- [ ] Improve progress visualization.
-- [ ] Improve ETA reporting.
-- [ ] Show per-file before/after size.
-- [ ] Expand final HDR/SDR summary statistics.
+- [x] Improve progress visualization.
+- [x] Improve ETA reporting.
+- [x] Show per-file before/after size.
+- [x] Expand final HDR/SDR summary statistics.
+- [x] Add text progress bar and processed-size progress.
+- [x] Add total elapsed, aggregate size, savings, and throughput to final summary.
 
 ## v2.0
 

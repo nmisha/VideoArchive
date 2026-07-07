@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0
+
+- Improved console progress visualization with a text progress bar and processed-size tracking.
+- Improved total ETA reporting with average time per completed file.
+- Added per-file result lines showing source size, output size, savings, and encode time.
+- Expanded final summary with total elapsed time, total source size, total encoded output size, aggregate savings, average encoded savings, and throughput in files per minute.
+- Added explicit UI reporting for outputs discarded after low-savings Smart Skip cleanup.
+
 ## 1.4.0
 
 - Added `Resume.psm1` for JSONL-based resume planning.

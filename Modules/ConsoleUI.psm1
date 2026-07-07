@@ -2,6 +2,51 @@ Set-StrictMode -Version Latest
 
 $script:InlineTelemetryActive = $false
 
+function Format-UiDuration {
+    param(
+        [Nullable[TimeSpan]]$Value
+    )
+
+    if ($null -eq $Value) {
+        return 'n/a'
+    }
+
+    if ($Value.Value.TotalHours -ge 1) {
+        return $Value.Value.ToString('hh\:mm\:ss')
+    }
+
+    return $Value.Value.ToString('mm\:ss')
+}
+
+function Format-UiSize {
+    param(
+        [Nullable[double]]$Megabytes
+    )
+
+    if ($null -eq $Megabytes) {
+        return 'n/a'
+    }
+
+    if ($Megabytes -ge 1024) {
+        return ('{0:N2} GB' -f ($Megabytes / 1024))
+    }
+
+    return ('{0:N2} MB' -f $Megabytes)
+}
+
+function New-UiProgressBar {
+    param(
+        [int]$Percent,
+        [int]$Width = 24
+    )
+
+    $safePercent = [math]::Max(0, [math]::Min(100, $Percent))
+    $filled = [math]::Round(($safePercent / 100) * $Width)
+    $filledText = ''.PadLeft($filled, '#')
+    $emptyText = ''.PadLeft(($Width - $filled), '-')
+    return ('[{0}{1}]' -f $filledText, $emptyText)
+}
+
 function Complete-InlineTelemetry {
     if ($script:InlineTelemetryActive) {
         Write-Host ''
@@ -122,21 +167,60 @@ function Update-VideoArchiveProgress {
         [string]$CurrentFile,
 
         [Parameter(Mandatory)]
-        [datetime]$StartTime
+        [datetime]$StartTime,
+
+        [Nullable[double]]$ProcessedSourceMb,
+
+        [Nullable[double]]$TotalSourceMb
     )
 
     $percent = if ($Total -gt 0) { [int](($Completed / $Total) * 100) } else { 0 }
+    $progressBar = New-UiProgressBar -Percent $percent
     $elapsed = (Get-Date) - $StartTime
     $etaText = 'n/a'
+    $avgText = 'n/a'
 
     if ($Completed -gt 0 -and $Completed -lt $Total) {
         $avgSeconds = $elapsed.TotalSeconds / $Completed
         $remaining = [TimeSpan]::FromSeconds($avgSeconds * ($Total - $Completed))
-        $etaText = $remaining.ToString('hh\:mm\:ss')
+        $etaText = Format-UiDuration -Value $remaining
+        $avgText = Format-UiDuration -Value ([TimeSpan]::FromSeconds($avgSeconds))
+    } elseif ($Completed -gt 0) {
+        $avgText = Format-UiDuration -Value ([TimeSpan]::FromSeconds($elapsed.TotalSeconds / $Completed))
     }
 
     Complete-InlineTelemetry
-    Write-Host ("Progress: {0}/{1} completed ({2}%) | ETA {3} | Current: {4}" -f $Completed, $Total, $percent, $etaText, $CurrentFile) -ForegroundColor DarkCyan
+    $sizeText = if ($null -ne $ProcessedSourceMb -and $null -ne $TotalSourceMb -and $TotalSourceMb -gt 0) {
+        " | Size {0}/{1}" -f (Format-UiSize -Megabytes $ProcessedSourceMb), (Format-UiSize -Megabytes $TotalSourceMb)
+    } else {
+        ''
+    }
+    Write-Host ("Progress: {0} {1}/{2} ({3}%) | ETA {4} | Avg/File {5}{6}" -f $progressBar, $Completed, $Total, $percent, $etaText, $avgText, $sizeText) -ForegroundColor DarkCyan
+    Write-Host ("Current : {0}" -f $CurrentFile) -ForegroundColor DarkGray
+}
+
+function Write-FileResultStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$FileName,
+
+        [string]$Action,
+
+        [Nullable[double]]$SourceSizeMb,
+
+        [Nullable[double]]$OutputSizeMb,
+
+        [Nullable[double]]$SavingsPercent,
+
+        [Nullable[TimeSpan]]$Duration
+    )
+
+    $actionText = if ([string]::IsNullOrWhiteSpace($Action)) { 'Result' } else { $Action }
+    $sizeText = "{0} -> {1}" -f (Format-UiSize -Megabytes $SourceSizeMb), (Format-UiSize -Megabytes $OutputSizeMb)
+    $savingsText = if ($null -ne $SavingsPercent) { ('{0:N2}%' -f $SavingsPercent) } else { 'n/a' }
+    $durationText = Format-UiDuration -Value $Duration
+    Write-VideoArchiveStatus -Message ("{0}: {1} | {2} | Saved {3} | Time {4}" -f $actionText, $FileName, $sizeText, $savingsText, $durationText) -Level Success
 }
 
 function Complete-VideoArchiveProgress {
@@ -201,6 +285,24 @@ function Show-VideoArchiveSummary {
     Write-Host ("DateMeta: {0}" -f $Summary.CaptureDateMetadata)
     Write-Host ("DateName: {0}" -f $Summary.CaptureDateFileName)
     Write-Host ("DateMiss: {0}" -f $Summary.CaptureDateMissing)
+    if ($null -ne $Summary.PSObject.Properties['TotalElapsed']) {
+        Write-Host ("Elapsed : {0}" -f (Format-UiDuration -Value $Summary.TotalElapsed))
+    }
+    if ($null -ne $Summary.PSObject.Properties['TotalSourceMb']) {
+        Write-Host ("SrcSize : {0}" -f (Format-UiSize -Megabytes $Summary.TotalSourceMb))
+    }
+    if ($null -ne $Summary.PSObject.Properties['TotalOutputMb']) {
+        Write-Host ("OutSize : {0}" -f (Format-UiSize -Megabytes $Summary.TotalOutputMb))
+    }
+    if ($null -ne $Summary.PSObject.Properties['TotalSavingsPercent']) {
+        Write-Host ("Savings : {0}" -f ('{0:N2}%' -f $Summary.TotalSavingsPercent))
+    }
+    if ($null -ne $Summary.PSObject.Properties['AverageEncodedSavingsPercent']) {
+        Write-Host ("AvgSave : {0}" -f ('{0:N2}%' -f $Summary.AverageEncodedSavingsPercent))
+    }
+    if ($null -ne $Summary.PSObject.Properties['FilesPerMinute']) {
+        Write-Host ("Rate    : {0:N2} files/min" -f $Summary.FilesPerMinute)
+    }
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus

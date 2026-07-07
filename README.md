@@ -20,6 +20,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Validates encoded files before accepting them.
+- Shows text progress, total ETA, per-file size results, and an expanded final summary.
 
 ## Capture date behavior
 

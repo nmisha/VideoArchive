@@ -60,10 +60,10 @@ Goal: robust large-archive processing.
 
 Goal: better operator feedback during long runs.
 
-- Improve progress visualization.
-- Improve total ETA reporting.
-- Show before/after file size during processing.
-- Expand final HDR/SDR and date-source summary statistics.
+- Improve progress visualization [Done]
+- Improve total ETA reporting [Done]
+- Show before/after file size during processing [Done]
+- Expand final HDR/SDR and date-source summary statistics [Done]
 
 ## v2.0 - Multi Encoder
 
