@@ -1,38 +1,66 @@
 {
   "Archive": {
-    "description": "Maximum quality",
-    "qvbrHdr": 19,
+    "description": "Maximum quality for long-term archive",
+    "qvbrHdr": 18,
     "qvbrSdr": 19,
     "nvPreset": "p7",
     "lookahead": 32,
     "multipass": "2pass-full",
-    "aqStrength": 8
+    "aqStrength": 8,
+    "bFrames": 4,
+    "refFrames": 4,
+    "spatialAQ": true,
+    "temporalAQ": true,
+    "adaptiveI": true,
+    "adaptiveB": true,
+    "strictGop": false
   },
   "Balanced": {
     "description": "Recommended balance",
     "qvbrHdr": 19,
-    "qvbrSdr": 19,
+    "qvbrSdr": 20,
     "nvPreset": "p5",
-    "lookahead": 16,
+    "lookahead": 24,
     "multipass": "2pass-quarter",
-    "aqStrength": 8
+    "aqStrength": 8,
+    "bFrames": 4,
+    "refFrames": 4,
+    "spatialAQ": true,
+    "temporalAQ": true,
+    "adaptiveI": true,
+    "adaptiveB": true,
+    "strictGop": false
   },
   "Fast": {
-    "description": "Fast encoding",
+    "description": "Fast encode",
     "qvbrHdr": 20,
-    "qvbrSdr": 20,
+    "qvbrSdr": 21,
     "nvPreset": "p4",
     "lookahead": 8,
     "multipass": "none",
-    "aqStrength": 8
+    "aqStrength": 8,
+    "bFrames": 3,
+    "refFrames": 3,
+    "spatialAQ": true,
+    "temporalAQ": true,
+    "adaptiveI": true,
+    "adaptiveB": true,
+    "strictGop": false
   },
   "Storage": {
-    "description": "Maximum space saving",
+    "description": "Maximum compression",
     "qvbrHdr": 21,
-    "qvbrSdr": 21,
+    "qvbrSdr": 22,
     "nvPreset": "p5",
-    "lookahead": 16,
+    "lookahead": 24,
     "multipass": "2pass-quarter",
-    "aqStrength": 8
+    "aqStrength": 8,
+    "bFrames": 4,
+    "refFrames": 4,
+    "spatialAQ": true,
+    "temporalAQ": true,
+    "adaptiveI": true,
+    "adaptiveB": true,
+    "strictGop": false
   }
 }

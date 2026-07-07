@@ -2,12 +2,15 @@ Set-StrictMode -Version Latest
 
 function Get-TrackValue {
     param(
-        [Parameter(Mandatory)]
         [psobject]$Track,
 
         [Parameter(Mandatory)]
         [string[]]$Names
     )
+
+    if ($null -eq $Track) {
+        return $null
+    }
 
     foreach ($name in $Names) {
         $property = $Track.PSObject.Properties[$name]
@@ -113,12 +116,13 @@ function Get-HdrClassification {
     $isDolbyVision = $transferText -match 'Dolby\s*Vision'
     $isHdrVivid = $transferText -match 'HDR\s*Vivid|CUVA'
     $isHdr10Plus = $transferText -match 'HDR10\+'
-    $isHlg = $transferText -match 'HLG|ARIB-STD-B67'
-    $isPq = $transferText -match 'SMPTE\s*2084|PQ'
-    $isHdr10 = ($transferText -match 'HDR10') -or ($isPq -and $BitDepth -ge 10 -and $primariesText -match '2020')
+    $isHlg = $transferText -match 'HLG|ARIB[\s\-]*STD[\s\-]*B67'
+    $isPq = $transferText -match 'SMPTE[\s\-]*ST[\s\-]*2084|SMPTE[\s\-]*2084|PQ'
+    $isHdr10 = ($transferText -match 'HDR10')
+    $isUnknownHdr = (-not $isDolbyVision -and -not $isHdrVivid -and -not $isHdr10Plus -and -not $isHlg -and -not $isHdr10 -and -not $isPq -and $BitDepth -ge 10 -and $primariesText -match '2020')
 
-    $isHdr = $isDolbyVision -or $isHdrVivid -or $isHdr10Plus -or $isHlg -or $isHdr10 -or $isPq
-    $hdrType = $null
+    $isHdr = $isDolbyVision -or $isHdrVivid -or $isHdr10Plus -or $isHlg -or $isHdr10 -or $isPq -or $isUnknownHdr
+    $hdrType = 'SDR'
 
     if ($isDolbyVision) {
         $hdrType = 'Dolby Vision'
@@ -131,7 +135,9 @@ function Get-HdrClassification {
     } elseif ($isHdr10) {
         $hdrType = 'HDR10'
     } elseif ($isPq) {
-        $hdrType = 'PQ HDR'
+        $hdrType = 'PQ'
+    } elseif ($isUnknownHdr) {
+        $hdrType = 'Unknown HDR'
     }
 
     [pscustomobject]@{
@@ -171,11 +177,14 @@ function ConvertFrom-MediaInfoJson {
     $primaries = Get-TrackValue -Track $videoTrack -Names @('colour_primaries', 'ColorPrimaries', 'colour_primaries_Source')
     $matrix = Get-TrackValue -Track $videoTrack -Names @('matrix_coefficients', 'Matrix_Coefficients', 'matrix_coefficients_Source')
     $rotation = ConvertTo-NullableDouble (Get-TrackValue -Track $videoTrack -Names @('Rotation'))
+    $colorRange = Get-TrackValue -Track $videoTrack -Names @('colour_range', 'ColorRange', 'colour_range_Source')
+    $dolbyVisionProfile = Get-TrackValue -Track $videoTrack -Names @('HDR_Format_Profile', 'HDR_Format_Profile_Compatibility')
     $audioInfo = @(
         foreach ($audioTrack in $audioTracks) {
             [pscustomobject]@{
                 Codec = ConvertTo-NormalizedAudioCodec (Get-TrackValue -Track $audioTrack -Names @('Format', 'CodecID', 'InternetMediaType'))
                 Channels = ConvertTo-NullableInt (Get-TrackValue -Track $audioTrack -Names @('Channel(s)', 'Channel_s_', 'Channels'))
+                SamplingRate = ConvertTo-NullableInt (Get-TrackValue -Track $audioTrack -Names @('SamplingRate', 'SamplingRate_Original'))
             }
         }
     )
@@ -207,14 +216,19 @@ function ConvertFrom-MediaInfoJson {
         BitDepth = $bitDepth
         BitrateMbps = $bitrateMbps
         Rotation = $rotation
+        ColorRange = $colorRange
         Transfer = $transfer
         Primaries = $primaries
         Matrix = $matrix
         HDRFormat = $hdrFormat
+        DolbyVisionProfile = $dolbyVisionProfile
         IsHdr = $hdr.IsHdr
         HdrType = $hdr.HdrType
         AudioTrackCount = $audioTracks.Count
         AudioTracks = $audioInfo
+        AudioCodec = if ($audioInfo.Count -gt 0) { $audioInfo[0].Codec } else { $null }
+        AudioChannels = if ($audioInfo.Count -gt 0) { $audioInfo[0].Channels } else { $null }
+        AudioSamplingRate = if ($audioInfo.Count -gt 0) { $audioInfo[0].SamplingRate } else { $null }
         DurationSeconds = $durationSeconds
         SourceSizeBytes = $SourceSizeBytes
         SourceSizeMb = if ($null -ne $SourceSizeBytes) { [math]::Round($SourceSizeBytes / 1MB, 2) } else { $null }

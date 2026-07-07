@@ -33,6 +33,8 @@ function Get-EncodeDecision {
         [Parameter(Mandatory)]
         [psobject]$SmartSkip,
 
+        [string]$PresetName,
+
         [switch]$Force,
 
         [switch]$NoSmartSkip
@@ -88,6 +90,26 @@ function Get-EncodeDecision {
     if ($VideoInfo.Codec -eq 'HEVC' -and $null -ne $VideoInfo.BitrateMbps) {
         $threshold = Get-HevcThresholdMbps -VideoInfo $VideoInfo -SmartSkip $SmartSkip
         if ($VideoInfo.BitrateMbps -lt $threshold) {
+            $isProtectedHdrType = $VideoInfo.IsHdr -and @('HDR Vivid', 'Dolby Vision', 'HDR10+') -contains [string]$VideoInfo.HdrType
+            if ($isProtectedHdrType) {
+                return [pscustomobject]@{
+                    Action = 'Encode'
+                    Reason = "$($VideoInfo.HdrType) low-bitrate HDR is not skipped by Smart Skip"
+                    OutputGroup = $outputGroup
+                    SmartSkipApplied = $true
+                }
+            }
+
+            $isArchivalHdr = $VideoInfo.IsHdr -and ([string]$PresetName -eq 'Archive')
+            if ($isArchivalHdr -and -not @('HLG', 'HDR10') -contains [string]$VideoInfo.HdrType) {
+                return [pscustomobject]@{
+                    Action = 'Encode'
+                    Reason = "Archive preset keeps HDR type $($VideoInfo.HdrType) for validation and metadata review"
+                    OutputGroup = $outputGroup
+                    SmartSkipApplied = $true
+                }
+            }
+
             return [pscustomobject]@{
                 Action = 'Skip'
                 Reason = "HEVC bitrate $($VideoInfo.BitrateMbps) Mbps is below $threshold Mbps threshold"

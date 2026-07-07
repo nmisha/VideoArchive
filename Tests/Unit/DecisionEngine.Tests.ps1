@@ -35,6 +35,7 @@ Describe 'DecisionEngine' {
         $videoInfo = [pscustomobject]@{
             Codec = 'HEVC'
             IsHdr = $true
+            HdrType = 'HLG'
             Width = 3840
             Height = 2160
             BitrateMbps = 20
@@ -46,6 +47,23 @@ Describe 'DecisionEngine' {
         $decision.Action | Should Be 'Skip'
         $decision.Reason | Should Match '35'
         $decision.OutputGroup | Should Be 'HDR'
+    }
+
+    It 'does not skip low bitrate HEVC HDR Vivid files by default' {
+        $videoInfo = [pscustomobject]@{
+            Codec = 'HEVC'
+            IsHdr = $true
+            HdrType = 'HDR Vivid'
+            Width = 3840
+            Height = 2160
+            BitrateMbps = 20
+            SourceSizeMb = 500
+        }
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile 'D:\Out\file.mkv' -SmartSkip $smartSkip
+
+        $decision.Action | Should Be 'Encode'
+        $decision.Reason | Should Match 'HDR Vivid'
     }
 
     It 'encodes when Force is enabled' {

@@ -45,8 +45,22 @@ function New-VideoArchiveRecord {
         [Nullable[double]]$OutputSizeMb,
         [Nullable[double]]$SavingsPercent,
         [bool]$ValidationPassed,
+        [string]$ValidationWarnings,
+        [string]$ValidationErrors,
         [string]$Duration,
-        [bool]$DryRunFlag
+        [bool]$DryRunFlag,
+        [string]$HdrTypeSource,
+        [string]$HdrTypeOutput,
+        [Nullable[int]]$SourceWidth,
+        [Nullable[int]]$SourceHeight,
+        [Nullable[int]]$OutputWidth,
+        [Nullable[int]]$OutputHeight,
+        [string]$SourceTransfer,
+        [string]$OutputTransfer,
+        [string]$SourcePrimaries,
+        [string]$OutputPrimaries,
+        [Nullable[int]]$SourceBitDepth,
+        [Nullable[int]]$OutputBitDepth
     )
 
     [pscustomobject][ordered]@{
@@ -63,9 +77,23 @@ function New-VideoArchiveRecord {
         SourceSizeMb = $SourceSizeMb
         OutputSizeMb = $OutputSizeMb
         SavingsPercent = $SavingsPercent
-        ValidationPassed = $ValidationPassed
+        ValidationSuccess = $ValidationPassed
+        ValidationWarnings = $ValidationWarnings
+        ValidationErrors = $ValidationErrors
         Duration = $Duration
         DryRun = $DryRunFlag
+        HdrTypeSource = $HdrTypeSource
+        HdrTypeOutput = $HdrTypeOutput
+        SourceWidth = $SourceWidth
+        SourceHeight = $SourceHeight
+        OutputWidth = $OutputWidth
+        OutputHeight = $OutputHeight
+        SourceTransfer = $SourceTransfer
+        OutputTransfer = $OutputTransfer
+        SourcePrimaries = $SourcePrimaries
+        OutputPrimaries = $OutputPrimaries
+        SourceBitDepth = $SourceBitDepth
+        OutputBitDepth = $OutputBitDepth
     }
 }
 
@@ -228,7 +256,7 @@ try {
             $outputRoot = if ($videoInfo.IsHdr) { $outputRoots.HDR } else { $outputRoots.SDR }
             $finalOutputFile = Join-Path -Path $outputRoot -ChildPath $relativeOutputPath
 
-            $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -Force:$Force -NoSmartSkip:$NoSmartSkip
+            $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -Force:$Force -NoSmartSkip:$NoSmartSkip
             Write-VideoArchiveStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason)
 
             if ($decision.Action -eq 'Skip') {
@@ -247,8 +275,22 @@ try {
                     -OutputSizeMb $null `
                     -SavingsPercent $null `
                     -ValidationPassed $false `
+                    -ValidationWarnings $null `
+                    -ValidationErrors $null `
                     -Duration $null `
-                    -DryRunFlag $false)
+                    -DryRunFlag $false `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $null `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $null `
+                    -OutputHeight $null `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $null `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $null `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $null)
                 $completedCount++
                 continue
             }
@@ -269,8 +311,22 @@ try {
                     -OutputSizeMb $null `
                     -SavingsPercent $null `
                     -ValidationPassed $false `
+                    -ValidationWarnings $null `
+                    -ValidationErrors $null `
                     -Duration $null `
-                    -DryRunFlag $true)
+                    -DryRunFlag $true `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $null `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $null `
+                    -OutputHeight $null `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $null `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $null `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $null)
                 $completedCount++
                 continue
             }
@@ -295,8 +351,22 @@ try {
                     -OutputSizeMb $null `
                     -SavingsPercent $null `
                     -ValidationPassed $false `
+                    -ValidationWarnings $null `
+                    -ValidationErrors $encodeResult.Log `
                     -Duration $encodeResult.Duration.ToString() `
-                    -DryRunFlag $false)
+                    -DryRunFlag $false `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $null `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $null `
+                    -OutputHeight $null `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $null `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $null `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $null)
                 $completedCount++
                 continue
             }
@@ -315,7 +385,6 @@ try {
 
             if (-not $validation.Success) {
                 $summary.Failed++
-                Remove-IfExists -Path $finalOutputFile
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `
@@ -330,8 +399,22 @@ try {
                     -OutputSizeMb $null `
                     -SavingsPercent $null `
                     -ValidationPassed $false `
+                    -ValidationWarnings ($validation.Warnings -join '; ') `
+                    -ValidationErrors ($validation.Errors -join '; ') `
                     -Duration $encodeResult.Duration.ToString() `
-                    -DryRunFlag $false)
+                    -DryRunFlag $false `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $outputInfo.HdrType `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $outputInfo.Width `
+                    -OutputHeight $outputInfo.Height `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $outputInfo.Transfer `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $outputInfo.Primaries `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $outputInfo.BitDepth)
                 $completedCount++
                 continue
             }
@@ -362,8 +445,22 @@ try {
                     -OutputSizeMb $outputSizeMb `
                     -SavingsPercent $savingsPercent `
                     -ValidationPassed $true `
+                    -ValidationWarnings ($validation.Warnings -join '; ') `
+                    -ValidationErrors $null `
                     -Duration $encodeResult.Duration.ToString() `
-                    -DryRunFlag $false)
+                    -DryRunFlag $false `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $outputInfo.HdrType `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $outputInfo.Width `
+                    -OutputHeight $outputInfo.Height `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $outputInfo.Transfer `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $outputInfo.Primaries `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $outputInfo.BitDepth)
                 $completedCount++
                 continue
             }
@@ -383,8 +480,22 @@ try {
                 -OutputSizeMb $outputSizeMb `
                 -SavingsPercent $savingsPercent `
                 -ValidationPassed $true `
+                -ValidationWarnings ($validation.Warnings -join '; ') `
+                -ValidationErrors $null `
                 -Duration $encodeResult.Duration.ToString() `
-                -DryRunFlag $false)
+                -DryRunFlag $false `
+                -HdrTypeSource $videoInfo.HdrType `
+                -HdrTypeOutput $outputInfo.HdrType `
+                -SourceWidth $videoInfo.Width `
+                -SourceHeight $videoInfo.Height `
+                -OutputWidth $outputInfo.Width `
+                -OutputHeight $outputInfo.Height `
+                -SourceTransfer $videoInfo.Transfer `
+                -OutputTransfer $outputInfo.Transfer `
+                -SourcePrimaries $videoInfo.Primaries `
+                -OutputPrimaries $outputInfo.Primaries `
+                -SourceBitDepth $videoInfo.BitDepth `
+                -OutputBitDepth $outputInfo.BitDepth)
             $completedCount++
         } catch {
             $summary.Failed++
@@ -404,8 +515,22 @@ try {
                 -OutputSizeMb $null `
                 -SavingsPercent $null `
                 -ValidationPassed $false `
+                -ValidationWarnings $null `
+                -ValidationErrors $errorMessage `
                 -Duration $null `
-                -DryRunFlag $false)
+                -DryRunFlag $false `
+                -HdrTypeSource $null `
+                -HdrTypeOutput $null `
+                -SourceWidth $null `
+                -SourceHeight $null `
+                -OutputWidth $null `
+                -OutputHeight $null `
+                -SourceTransfer $null `
+                -OutputTransfer $null `
+                -SourcePrimaries $null `
+                -OutputPrimaries $null `
+                -SourceBitDepth $null `
+                -OutputBitDepth $null)
             Remove-IfExists -Path $tempOutputFile
             $completedCount++
         }

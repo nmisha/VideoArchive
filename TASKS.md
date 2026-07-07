@@ -2,69 +2,77 @@
 
 ## MVP v1.0 [Done]
 
-- [x] Создать структуру проекта.
-- [x] Разделить конфигурацию на `config.json`, `presets.json`, `smartskip.json`, `devices.json`.
-- [x] Реализовать `Config.psm1`.
-- [x] Реализовать `Scanner.psm1`.
-- [x] Реализовать `MediaAnalyzer.psm1` через MediaInfo JSON.
-- [x] Реализовать определение HDR/SDR.
-- [x] Реализовать `DecisionEngine.psm1`.
-- [x] Реализовать `Encoder.psm1` для NVEncC HEVC.
-- [x] Реализовать `Metadata.psm1` через ExifTool.
-- [x] Реализовать `Logger.psm1` для TXT/CSV/JSONL.
-- [x] Реализовать `ConsoleUI.psm1`.
-- [x] Собрать основной workflow в `VideoArchive.ps1`.
-- [x] Добавить `VideoArchive.cmd`.
-- [x] Добавить `README.md`.
+- [x] Create modular project structure.
+- [x] Split configuration into `config.json`, `presets.json`, `smartskip.json`, and `devices.json`.
+- [x] Implement `Config.psm1`.
+- [x] Implement `Scanner.psm1`.
+- [x] Implement `MediaAnalyzer.psm1` with MediaInfo JSON parsing.
+- [x] Implement HDR/SDR detection.
+- [x] Implement `DecisionEngine.psm1`.
+- [x] Implement `Encoder.psm1` for NVEncC HEVC encoding.
+- [x] Implement `Metadata.psm1` with ExifTool metadata copy.
+- [x] Implement `Logger.psm1` for TXT/CSV/JSONL logs.
+- [x] Implement `ConsoleUI.psm1`.
+- [x] Assemble the main workflow in `VideoArchive.ps1`.
+- [x] Add `VideoArchive.cmd`.
+- [x] Add project README and docs.
 
 ## v1.1 - Smart Skip [Done]
 
-- [x] Пропуск AV1.
-- [x] Пропуск маленьких файлов.
-- [x] Пропуск HEVC ниже bitrate threshold.
-- [x] Пропуск существующих выходных файлов.
-- [x] Флаг `-Force`.
-- [x] Флаг `-NoSmartSkip`.
-- [x] Флаг `-DryRun`.
-- [x] Подробные причины skip.
+- [x] Skip AV1.
+- [x] Skip small files.
+- [x] Skip low-bitrate HEVC sources.
+- [x] Skip existing outputs.
+- [x] Add `-Force`.
+- [x] Add `-NoSmartSkip`.
+- [x] Add `-DryRun`.
+- [x] Log explicit skip reasons.
 
 ## v1.2 - Validation [Done]
 
-- [x] `Validator.psm1`.
-- [x] Проверка разрешения.
-- [x] Проверка FPS.
-- [x] Проверка HDR.
-- [x] Проверка аудио.
-- [x] Проверка метаданных и дат файлов.
-- [x] Ошибка, если HDR потерян.
+- [x] Add `Validator.psm1`.
+- [x] Validate resolution.
+- [x] Validate FPS.
+- [x] Validate HDR preservation.
+- [x] Validate audio track preservation.
+- [x] Validate metadata and file timestamps.
+- [x] Fail when HDR is lost.
 
-## v1.3 - Resume
+## v1.3 - HDR Metadata Policy [Done]
 
-- [ ] Resume из JSONL/SQLite.
-- [ ] Не начинать заново успешно обработанные файлы.
-- [ ] Отдельный статус `Failed` / `Skipped` / `Encoded`.
+- [x] Add explicit HDR type classification.
+- [x] Detect `HDR Vivid`, `Dolby Vision`, `HDR10+`, `HLG`, `PQ`, and `SDR`.
+- [x] Accept `HDR Vivid -> HLG` as a warning instead of a hard failure.
+- [x] Extend logs with source/output validation details.
+- [x] Prevent Smart Skip from silently skipping low-bitrate proprietary HDR formats.
+- [x] Document HDR metadata behavior in `Docs/HDR.md`.
 
-## v1.4 - Better UI
+## v1.4 - Resume
 
-- [ ] Прогресс-бар.
-- [ ] ETA.
-- [ ] Скорость.
-- [ ] Размер до/после по каждому файлу.
-- [ ] Итоговая статистика по HDR/SDR/кодекам.
+- [ ] Resume from JSONL or SQLite.
+- [ ] Do not restart already successful files.
+- [ ] Separate resume handling for `Failed`, `Skipped`, and `Encoded`.
+
+## v1.5 - Better UI
+
+- [ ] Improve progress visualization.
+- [ ] Improve ETA reporting.
+- [ ] Show per-file before/after size.
+- [ ] Expand final HDR/SDR summary statistics.
 
 ## v2.0
 
 - [ ] AV1 NVENC.
 - [ ] Intel QSV.
 - [ ] AMD AMF.
-- [ ] Несколько GPU.
-- [ ] Очередь задач.
-- [ ] SQLite база.
+- [ ] Multi-GPU support.
+- [ ] Queue manager.
+- [ ] SQLite history.
 
 ## v3.0
 
 - [ ] GUI.
 - [ ] Drag and drop.
-- [ ] История запусков.
-- [ ] Просмотр логов.
-- [ ] Настройка пресетов из интерфейса.
+- [ ] Run history browser.
+- [ ] Log viewer.
+- [ ] Preset editing from UI.

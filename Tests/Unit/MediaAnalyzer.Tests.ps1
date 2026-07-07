@@ -1,7 +1,7 @@
 Import-Module "$PSScriptRoot\..\..\Modules\MediaAnalyzer.psm1" -Force
 
 Describe 'MediaAnalyzer' {
-    It 'detects HDR HLG from MediaInfo JSON sample' {
+    It 'detects HDR Vivid with HLG base HDR from MediaInfo JSON sample' {
         $sample = @'
 {
   "media": {
@@ -44,9 +44,66 @@ Describe 'MediaAnalyzer' {
         $result.Rotation | Should Be 90
         $result.IsHdr | Should Be $true
         $result.HdrType | Should Be 'HDR Vivid'
+        $result.ColorRange | Should Be $null
+        $result.AudioCodec | Should Be 'AAC'
+        $result.AudioChannels | Should Be 2
         $result.AudioTrackCount | Should Be 1
         $result.AudioTracks[0].Codec | Should Be 'AAC'
         $result.AudioTracks[0].Channels | Should Be 2
+    }
+
+    It 'classifies BT.2020 plus HLG as HLG' {
+        $sample = @'
+{
+  "media": {
+    "track": [
+      {
+        "@type": "Video",
+        "Format": "HEVC",
+        "Width": "3840",
+        "Height": "2160",
+        "FrameRate": "59.940",
+        "BitDepth": "10",
+        "transfer_characteristics": "ARIB STD B67",
+        "colour_primaries": "BT.2020",
+        "matrix_coefficients": "BT.2020 non-constant"
+      }
+    ]
+  }
+}
+'@
+
+        $result = ConvertFrom-MediaInfoJson -MediaInfoJson $sample -Path 'D:\Video\HLG.mp4' -SourceSizeBytes 104857600
+
+        $result.IsHdr | Should Be $true
+        $result.HdrType | Should Be 'HLG'
+    }
+
+    It 'classifies SMPTE ST 2084 as PQ' {
+        $sample = @'
+{
+  "media": {
+    "track": [
+      {
+        "@type": "Video",
+        "Format": "HEVC",
+        "Width": "3840",
+        "Height": "2160",
+        "FrameRate": "59.940",
+        "BitDepth": "10",
+        "transfer_characteristics": "SMPTE ST 2084",
+        "colour_primaries": "BT.2020",
+        "matrix_coefficients": "BT.2020 non-constant"
+      }
+    ]
+  }
+}
+'@
+
+        $result = ConvertFrom-MediaInfoJson -MediaInfoJson $sample -Path 'D:\Video\PQ.mp4' -SourceSizeBytes 104857600
+
+        $result.IsHdr | Should Be $true
+        $result.HdrType | Should Be 'PQ'
     }
 
     It 'keeps SDR media classified as SDR' {
@@ -84,7 +141,7 @@ Describe 'MediaAnalyzer' {
 
         $result.Codec | Should Be 'AVC'
         $result.IsHdr | Should Be $false
-        $result.HdrType | Should Be $null
+        $result.HdrType | Should Be 'SDR'
         $result.BitDepth | Should Be 8
         $result.DurationSeconds | Should Be 60
         $result.AudioTracks[0].Codec | Should Be 'PCM'

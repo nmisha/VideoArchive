@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+$script:NvEncOptionCache = @{}
+
 function ConvertTo-ProcessArgumentString {
     [CmdletBinding()]
     param(
@@ -109,6 +111,31 @@ function Get-ArchiveOutputExtension {
     }
 }
 
+function Test-NvEncOptionSupported {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$NvEncPath,
+
+        [Parameter(Mandatory)]
+        [string]$OptionName
+    )
+
+    if (-not $script:NvEncOptionCache.ContainsKey($NvEncPath)) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $helpText = & $NvEncPath --help 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+        } finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+
+        $script:NvEncOptionCache[$NvEncPath] = if ([string]::IsNullOrWhiteSpace($helpText)) { '' } else { $helpText }
+    }
+
+    return $script:NvEncOptionCache[$NvEncPath] -match "(?m)(^|\s)$([regex]::Escape($OptionName))(\s|,|$)"
+}
+
 function New-EncodeJob {
     [CmdletBinding()]
     param(
@@ -142,15 +169,40 @@ function New-EncodeJob {
         '--preset', [string]$Preset.nvPreset
         '--qvbr', $qvbr
         '--lookahead', [string]$Preset.lookahead
-        '--multipass', [string]$Preset.multipass
-        '--aq'
         '--aq-strength', [string]$Preset.aqStrength
+        '--bframes', [string]$Preset.bFrames
+        '--ref', [string]$Preset.refFrames
+        '--gop-len', 'auto'
         '--audio-copy'
         '--video-metadata', 'copy'
         '--chapter-copy'
         '--log-level', 'info'
         '--process-codepage', 'utf8'
     )
+
+    if ([string]$Preset.multipass -ne 'none') {
+        $args += @('--multipass', [string]$Preset.multipass)
+    }
+
+    if ([bool]$Preset.spatialAQ) {
+        $args += '--aq'
+    }
+
+    if ([bool]$Preset.temporalAQ) {
+        $args += '--aq-temporal'
+    }
+
+    if ([bool]$Preset.adaptiveI) {
+        $args += '--adapt-i'
+    }
+
+    if ([bool]$Preset.adaptiveB) {
+        $args += '--adapt-b'
+    }
+
+    if ([bool]$Preset.strictGop) {
+        $args += '--strict-gop'
+    }
 
     if ($VideoInfo.IsHdr) {
         $args += @(
@@ -165,6 +217,12 @@ function New-EncodeJob {
             '--profile', 'main'
             '--output-depth', '8'
         )
+    }
+
+    foreach ($optionalSwitch in @('--weightp', '--aud', '--repeat-headers')) {
+        if (Test-NvEncOptionSupported -NvEncPath $NvEncPath -OptionName $optionalSwitch) {
+            $args += $optionalSwitch
+        }
     }
 
     [pscustomobject]@{

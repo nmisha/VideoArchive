@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.0
+
+- Improved preset tuning for HDR and SDR archive targets.
+- Extended `NVEncC` command construction with preset-driven `bframes`, `ref`, adaptive I/B, temporal AQ, and optional capability-checked switches.
+- Kept audio in copy mode only throughout the encode pipeline.
+- Expanded `MediaAnalyzer` HDR classification to return concrete `HdrType` values including `HDR Vivid`, `Dolby Vision`, `HDR10+`, `HLG`, `PQ`, and `SDR`.
+- Added video analysis fields for `Rotation`, `ColorRange`, `DolbyVisionProfile`, `AudioCodec`, `AudioChannels`, and `AudioSamplingRate`.
+- Updated validator to return `Warnings` and `Errors`.
+- Added accepted warning flow for `HDR Vivid -> HLG` when base HLG HDR is preserved.
+- Relaxed FPS validation tolerance to `0.2 fps`.
+- Extended CSV/JSONL logging with source/output HDR and validation detail fields.
+- Adjusted Smart Skip so low-bitrate `HDR Vivid`, `Dolby Vision`, and `HDR10+` HEVC files are not skipped by default.
+- Added HDR behavior documentation in [Docs/HDR.md](X:\Projects\VideoArchive\Docs\HDR.md).
+- Expanded unit tests for `MediaAnalyzer`, `Validator`, and `DecisionEngine`.
+
 ## 1.2.0
 
 - Added safety validation for encoded files.

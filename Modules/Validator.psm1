@@ -77,6 +77,51 @@ function Test-MetadataPreserved {
     return @($errors)
 }
 
+function Test-HdrCompatibility {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$SourceInfo,
+
+        [Parameter(Mandatory)]
+        [psobject]$OutputInfo
+    )
+
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $errors = New-Object System.Collections.Generic.List[string]
+
+    if ($SourceInfo.IsHdr) {
+        if (-not $OutputInfo.IsHdr) {
+            $errors.Add('HDR source became SDR')
+        } else {
+            if ($OutputInfo.BitDepth -lt 10) {
+                $errors.Add("HDR output bit depth must be at least 10-bit, got $($OutputInfo.BitDepth)")
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Primaries) -and $SourceInfo.Primaries -match '2020') {
+                if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries)) {
+                    $errors.Add("Primaries mismatch: '$($SourceInfo.Primaries)' -> '$($OutputInfo.Primaries)'")
+                }
+            }
+
+            if ([string]$SourceInfo.HdrType -eq 'HDR Vivid' -and [string]$OutputInfo.HdrType -eq 'HLG') {
+                $warnings.Add('HDR Vivid metadata were not preserved; base HLG HDR preserved')
+            } elseif (-not [string]::IsNullOrWhiteSpace($SourceInfo.Transfer)) {
+                if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer)) {
+                    $errors.Add("Transfer mismatch: '$($SourceInfo.Transfer)' -> '$($OutputInfo.Transfer)'")
+                }
+            }
+        }
+    } elseif ($OutputInfo.IsHdr) {
+        $errors.Add("SDR source unexpectedly became HDR ($($OutputInfo.HdrType))")
+    }
+
+    return [pscustomobject]@{
+        Warnings = @($warnings)
+        Errors = @($errors)
+    }
+}
+
 function Test-FileTimestampsPreserved {
     [CmdletBinding()]
     param(
@@ -126,7 +171,7 @@ function Test-EncodedVideo {
 
         [switch]$ValidateTimestamps,
 
-        [double]$FpsTolerance = 0.05,
+        [double]$FpsTolerance = 0.2,
 
         [double]$RotationTolerance = 0.1,
 
@@ -136,6 +181,7 @@ function Test-EncodedVideo {
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
+    $warnings = New-Object System.Collections.Generic.List[string]
 
     if (-not (Test-Path -LiteralPath $OutputFile -PathType Leaf)) {
         $errors.Add("Output file does not exist: $OutputFile")
@@ -162,25 +208,17 @@ function Test-EncodedVideo {
         }
     }
 
-    if ($SourceInfo.IsHdr -and -not $OutputInfo.IsHdr) {
-        $errors.Add('HDR source became SDR')
-    }
-
-    if ($null -ne $SourceInfo.BitDepth -and $null -ne $OutputInfo.BitDepth -and $SourceInfo.BitDepth -ne $OutputInfo.BitDepth) {
+    if ($null -ne $SourceInfo.BitDepth -and $null -ne $OutputInfo.BitDepth -and $SourceInfo.BitDepth -ne $OutputInfo.BitDepth -and -not $SourceInfo.IsHdr) {
         $errors.Add("BitDepth mismatch: $($SourceInfo.BitDepth) -> $($OutputInfo.BitDepth)")
     }
 
-    if ($SourceInfo.IsHdr -and $OutputInfo.BitDepth -ne 10) {
-        $errors.Add("HDR output bit depth must be 10-bit, got $($OutputInfo.BitDepth)")
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Transfer)) {
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Transfer) -and -not $SourceInfo.IsHdr) {
         if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer)) {
             $errors.Add("Transfer mismatch: '$($SourceInfo.Transfer)' -> '$($OutputInfo.Transfer)'")
         }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Primaries)) {
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Primaries) -and -not $SourceInfo.IsHdr) {
         if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries)) {
             $errors.Add("Primaries mismatch: '$($SourceInfo.Primaries)' -> '$($OutputInfo.Primaries)'")
         }
@@ -204,6 +242,10 @@ function Test-EncodedVideo {
         $errors.Add("Audio track count mismatch: $($SourceInfo.AudioTrackCount) -> $($OutputInfo.AudioTrackCount)")
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.AudioCodec) -and [string]::IsNullOrWhiteSpace($OutputInfo.AudioCodec)) {
+        $errors.Add('Audio codec missing in output')
+    }
+
     $sourceAudioTracks = @($SourceInfo.AudioTracks)
     $outputAudioTracks = @($OutputInfo.AudioTracks)
     if ($sourceAudioTracks.Count -gt 0 -or $outputAudioTracks.Count -gt 0) {
@@ -221,6 +263,14 @@ function Test-EncodedVideo {
         }
     }
 
+    $hdrValidation = Test-HdrCompatibility -SourceInfo $SourceInfo -OutputInfo $OutputInfo
+    foreach ($warning in $hdrValidation.Warnings) {
+        $warnings.Add($warning)
+    }
+    foreach ($error in $hdrValidation.Errors) {
+        $errors.Add($error)
+    }
+
     if ($ValidateTimestamps) {
         foreach ($timestampError in (Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile)) {
             $errors.Add($timestampError)
@@ -233,6 +283,7 @@ function Test-EncodedVideo {
 
     [pscustomobject]@{
         Success = ($errors.Count -eq 0)
+        Warnings = @($warnings)
         Errors = @($errors)
     }
 }

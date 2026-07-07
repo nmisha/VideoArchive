@@ -33,12 +33,15 @@ Describe 'Validator' {
             Fps = 59.94
             Rotation = 90
             IsHdr = $true
+            HdrType = 'HDR Vivid'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -48,12 +51,15 @@ Describe 'Validator' {
             Fps = 59.94
             Rotation = 90
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -75,6 +81,7 @@ Describe 'Validator' {
 
         $result.Success | Should Be $true
         $result.Errors.Count | Should Be 0
+        ($result.Warnings -join ' | ') | Should Match 'HDR Vivid metadata were not preserved'
     }
 
     It 'passes when LastAccessTime differs within tolerance' {
@@ -109,12 +116,15 @@ Describe 'Validator' {
             Fps = 59.785
             Rotation = 0
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -124,12 +134,15 @@ Describe 'Validator' {
             Fps = 59.796
             Rotation = 0
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -159,12 +172,15 @@ Describe 'Validator' {
             Fps = 59.94
             Rotation = 90
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -173,13 +189,16 @@ Describe 'Validator' {
             Height = 2160
             Fps = 59.94
             Rotation = 0
-            IsHdr = $true
+            IsHdr = $false
+            HdrType = 'SDR'
             BitDepth = 10
             Transfer = 'BT.709'
             Primaries = 'BT.709'
             Matrix = 'BT.709'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'PCM'
+            AudioChannels = 1
             AudioTracks = @([pscustomobject]@{ Codec = 'PCM'; Channels = 1 })
         }
 
@@ -200,7 +219,7 @@ Describe 'Validator' {
         $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata
 
         $result.Success | Should Be $false
-        ($result.Errors -join ' | ') | Should Match 'Transfer mismatch'
+        ($result.Errors -join ' | ') | Should Match 'HDR source became SDR'
         ($result.Errors -join ' | ') | Should Match 'CreationTime mismatch'
         ($result.Errors -join ' | ') | Should Match 'Rotation mismatch'
         ($result.Errors -join ' | ') | Should Match 'Audio codec mismatch'
@@ -237,12 +256,15 @@ Describe 'Validator' {
             Fps = 59.94
             Rotation = 0
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -252,12 +274,15 @@ Describe 'Validator' {
             Fps = 58.94
             Rotation = 0
             IsHdr = $true
+            HdrType = 'HLG'
             BitDepth = 10
             Transfer = 'HLG'
             Primaries = 'BT.2020'
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
             AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
@@ -265,5 +290,53 @@ Describe 'Validator' {
 
         $result.Success | Should Be $false
         ($result.Errors -join ' | ') | Should Match 'FPS mismatch'
+    }
+
+    It 'fails when resolution differs' {
+        $sourceFile = Join-Path $tempRoot 'source_resolution_bad.mp4'
+        $outputFile = Join-Path $tempRoot 'output_resolution_bad.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source'
+        Set-Content -LiteralPath $outputFile -Value 'output'
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 3840
+            Height = 2160
+            Fps = 59.94
+            Rotation = 0
+            IsHdr = $false
+            HdrType = 'SDR'
+            BitDepth = 8
+            Transfer = 'BT.709'
+            Primaries = 'BT.709'
+            Matrix = 'BT.709'
+            Codec = 'HEVC'
+            AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $outputInfo = [pscustomobject]@{
+            Width = 1920
+            Height = 1080
+            Fps = 59.94
+            Rotation = 0
+            IsHdr = $false
+            HdrType = 'SDR'
+            BitDepth = 8
+            Transfer = 'BT.709'
+            Primaries = 'BT.709'
+            Matrix = 'BT.709'
+            Codec = 'HEVC'
+            AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile
+
+        $result.Success | Should Be $false
+        ($result.Errors -join ' | ') | Should Match 'Resolution mismatch'
     }
 }
