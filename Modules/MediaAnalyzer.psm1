@@ -35,6 +35,24 @@ function ConvertTo-NormalizedCodec {
     }
 }
 
+function ConvertTo-NormalizedAudioCodec {
+    param([string]$Codec)
+
+    if ([string]::IsNullOrWhiteSpace($Codec)) {
+        return $null
+    }
+
+    switch -Regex ($Codec.Trim()) {
+        '^(AAC|A_AAC.*|MPEG-4 AAC)$' { return 'AAC' }
+        '^(AC-3|AC3|A_AC3)$' { return 'AC-3' }
+        '^(E-AC-3|EAC3|EC-3|A_EAC3)$' { return 'E-AC-3' }
+        '^(PCM|LPCM)$' { return 'PCM' }
+        '^OPUS$' { return 'OPUS' }
+        '^VORBIS$' { return 'VORBIS' }
+        default { return $Codec.Trim().ToUpperInvariant() }
+    }
+}
+
 function ConvertTo-NullableInt {
     param([string]$Value)
 
@@ -152,6 +170,15 @@ function ConvertFrom-MediaInfoJson {
     $transfer = Get-TrackValue -Track $videoTrack -Names @('transfer_characteristics', 'Transfer_Characteristics', 'transfer_characteristics_Original')
     $primaries = Get-TrackValue -Track $videoTrack -Names @('colour_primaries', 'ColorPrimaries', 'colour_primaries_Source')
     $matrix = Get-TrackValue -Track $videoTrack -Names @('matrix_coefficients', 'Matrix_Coefficients', 'matrix_coefficients_Source')
+    $rotation = ConvertTo-NullableDouble (Get-TrackValue -Track $videoTrack -Names @('Rotation'))
+    $audioInfo = @(
+        foreach ($audioTrack in $audioTracks) {
+            [pscustomobject]@{
+                Codec = ConvertTo-NormalizedAudioCodec (Get-TrackValue -Track $audioTrack -Names @('Format', 'CodecID', 'InternetMediaType'))
+                Channels = ConvertTo-NullableInt (Get-TrackValue -Track $audioTrack -Names @('Channel(s)', 'Channel_s_', 'Channels'))
+            }
+        }
+    )
 
     $hdrParts = @(@(
         Get-TrackValue -Track $videoTrack -Names @('HDR_Format')
@@ -179,6 +206,7 @@ function ConvertFrom-MediaInfoJson {
         Fps = $fps
         BitDepth = $bitDepth
         BitrateMbps = $bitrateMbps
+        Rotation = $rotation
         Transfer = $transfer
         Primaries = $primaries
         Matrix = $matrix
@@ -186,6 +214,7 @@ function ConvertFrom-MediaInfoJson {
         IsHdr = $hdr.IsHdr
         HdrType = $hdr.HdrType
         AudioTrackCount = $audioTracks.Count
+        AudioTracks = $audioInfo
         DurationSeconds = $durationSeconds
         SourceSizeBytes = $SourceSizeBytes
         SourceSizeMb = if ($null -ne $SourceSizeBytes) { [math]::Round($SourceSizeBytes / 1MB, 2) } else { $null }

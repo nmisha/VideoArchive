@@ -31,6 +31,7 @@ Describe 'Validator' {
             Width = 3840
             Height = 2160
             Fps = 59.94
+            Rotation = 90
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -38,12 +39,14 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $outputInfo = [pscustomobject]@{
             Width = 3840
             Height = 2160
             Fps = 59.94
+            Rotation = 90
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -51,9 +54,24 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
-        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps
+        $sourceMetadata = [pscustomobject]@{
+            DateTaken = '2026-07-05T12:03:00'
+            GpsLatitude = 55.7558
+            GpsLongitude = 37.6176
+            HasGps = $true
+        }
+
+        $outputMetadata = [pscustomobject]@{
+            DateTaken = '2026-07-05T12:03:00'
+            GpsLatitude = 55.7558
+            GpsLongitude = 37.6176
+            HasGps = $true
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata
 
         $result.Success | Should Be $true
         $result.Errors.Count | Should Be 0
@@ -89,6 +107,7 @@ Describe 'Validator' {
             Width = 3840
             Height = 2160
             Fps = 59.785
+            Rotation = 0
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -96,12 +115,14 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $outputInfo = [pscustomobject]@{
             Width = 3840
             Height = 2160
             Fps = 59.796
+            Rotation = 0
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -109,6 +130,7 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile
@@ -135,6 +157,7 @@ Describe 'Validator' {
             Width = 3840
             Height = 2160
             Fps = 59.94
+            Rotation = 90
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -142,12 +165,14 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $outputInfo = [pscustomobject]@{
             Width = 3840
             Height = 2160
             Fps = 59.94
+            Rotation = 0
             IsHdr = $true
             BitDepth = 10
             Transfer = 'BT.709'
@@ -155,13 +180,33 @@ Describe 'Validator' {
             Matrix = 'BT.709'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'PCM'; Channels = 1 })
         }
 
-        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps
+        $sourceMetadata = [pscustomobject]@{
+            DateTaken = '2026-07-05T12:03:00'
+            GpsLatitude = 55.7558
+            GpsLongitude = 37.6176
+            HasGps = $true
+        }
+
+        $outputMetadata = [pscustomobject]@{
+            DateTaken = '2026-07-06T12:03:00'
+            GpsLatitude = $null
+            GpsLongitude = $null
+            HasGps = $false
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata
 
         $result.Success | Should Be $false
-        ($result.Errors -join ' | ') | Should Match 'HDR transfer mismatch'
+        ($result.Errors -join ' | ') | Should Match 'Transfer mismatch'
         ($result.Errors -join ' | ') | Should Match 'CreationTime mismatch'
+        ($result.Errors -join ' | ') | Should Match 'Rotation mismatch'
+        ($result.Errors -join ' | ') | Should Match 'Audio codec mismatch'
+        ($result.Errors -join ' | ') | Should Match 'Audio channels mismatch'
+        ($result.Errors -join ' | ') | Should Match 'GPS metadata missing in output'
+        ($result.Errors -join ' | ') | Should Match 'DateTaken mismatch'
     }
 
     It 'fails when LastAccessTime exceeds tolerance' {
@@ -190,6 +235,7 @@ Describe 'Validator' {
             Width = 3840
             Height = 2160
             Fps = 59.94
+            Rotation = 0
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -197,12 +243,14 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $outputInfo = [pscustomobject]@{
             Width = 3840
             Height = 2160
             Fps = 58.94
+            Rotation = 0
             IsHdr = $true
             BitDepth = 10
             Transfer = 'HLG'
@@ -210,6 +258,7 @@ Describe 'Validator' {
             Matrix = 'BT.2020 non-constant'
             Codec = 'HEVC'
             AudioTrackCount = 1
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
         }
 
         $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile

@@ -19,6 +19,64 @@ function Test-StringContainsNormalized {
     return $normalizedActual.Contains($normalizedExpected)
 }
 
+function Test-StringEquivalentNormalized {
+    param(
+        [string]$Actual,
+        [string]$Expected
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Actual) -and [string]::IsNullOrWhiteSpace($Expected)) {
+        return $true
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Actual) -or [string]::IsNullOrWhiteSpace($Expected)) {
+        return $false
+    }
+
+    $normalizedActual = ($Actual -replace '\s+', '').ToLowerInvariant()
+    $normalizedExpected = ($Expected -replace '\s+', '').ToLowerInvariant()
+    return ($normalizedActual -eq $normalizedExpected) -or
+        $normalizedActual.Contains($normalizedExpected) -or
+        $normalizedExpected.Contains($normalizedActual)
+}
+
+function Test-MetadataPreserved {
+    [CmdletBinding()]
+    param(
+        [psobject]$SourceMetadata,
+
+        [psobject]$OutputMetadata,
+
+        [double]$GpsTolerance = 0.0001
+    )
+
+    $errors = New-Object System.Collections.Generic.List[string]
+
+    if ($null -eq $SourceMetadata -or $null -eq $OutputMetadata) {
+        return @($errors)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$SourceMetadata.DateTaken)) {
+        if (-not (Test-StringEquivalentNormalized -Actual $OutputMetadata.DateTaken -Expected $SourceMetadata.DateTaken)) {
+            $errors.Add("DateTaken mismatch: '$($SourceMetadata.DateTaken)' -> '$($OutputMetadata.DateTaken)'")
+        }
+    }
+
+    if ($SourceMetadata.HasGps) {
+        if (-not $OutputMetadata.HasGps) {
+            $errors.Add('GPS metadata missing in output')
+        } else {
+            $latitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLatitude) - ([double]$OutputMetadata.GpsLatitude))
+            $longitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLongitude) - ([double]$OutputMetadata.GpsLongitude))
+            if ($latitudeDelta -gt $GpsTolerance -or $longitudeDelta -gt $GpsTolerance) {
+                $errors.Add("GPS mismatch: [$($SourceMetadata.GpsLatitude), $($SourceMetadata.GpsLongitude)] -> [$($OutputMetadata.GpsLatitude), $($OutputMetadata.GpsLongitude)]")
+            }
+        }
+    }
+
+    return @($errors)
+}
+
 function Test-FileTimestampsPreserved {
     [CmdletBinding()]
     param(
@@ -68,7 +126,13 @@ function Test-EncodedVideo {
 
         [switch]$ValidateTimestamps,
 
-        [double]$FpsTolerance = 0.05
+        [double]$FpsTolerance = 0.05,
+
+        [double]$RotationTolerance = 0.1,
+
+        [psobject]$SourceMetadata,
+
+        [psobject]$OutputMetadata
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -86,6 +150,12 @@ function Test-EncodedVideo {
         $errors.Add("Resolution mismatch: $($SourceInfo.Width)x$($SourceInfo.Height) -> $($OutputInfo.Width)x$($OutputInfo.Height)")
     }
 
+    if ($null -ne $SourceInfo.Rotation -or $null -ne $OutputInfo.Rotation) {
+        if ($null -eq $SourceInfo.Rotation -or $null -eq $OutputInfo.Rotation -or [math]::Abs($SourceInfo.Rotation - $OutputInfo.Rotation) -gt $RotationTolerance) {
+            $errors.Add("Rotation mismatch: $($SourceInfo.Rotation) -> $($OutputInfo.Rotation)")
+        }
+    }
+
     if ($null -ne $SourceInfo.Fps -and $null -ne $OutputInfo.Fps) {
         if ([math]::Abs($SourceInfo.Fps - $OutputInfo.Fps) -gt $FpsTolerance) {
             $errors.Add("FPS mismatch: $($SourceInfo.Fps) -> $($OutputInfo.Fps)")
@@ -96,21 +166,29 @@ function Test-EncodedVideo {
         $errors.Add('HDR source became SDR')
     }
 
+    if ($null -ne $SourceInfo.BitDepth -and $null -ne $OutputInfo.BitDepth -and $SourceInfo.BitDepth -ne $OutputInfo.BitDepth) {
+        $errors.Add("BitDepth mismatch: $($SourceInfo.BitDepth) -> $($OutputInfo.BitDepth)")
+    }
+
     if ($SourceInfo.IsHdr -and $OutputInfo.BitDepth -ne 10) {
         $errors.Add("HDR output bit depth must be 10-bit, got $($OutputInfo.BitDepth)")
     }
 
-    if ($SourceInfo.IsHdr) {
-        if (-not (Test-StringContainsNormalized -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer)) {
-            $errors.Add("HDR transfer mismatch: '$($SourceInfo.Transfer)' -> '$($OutputInfo.Transfer)'")
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Transfer)) {
+        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer)) {
+            $errors.Add("Transfer mismatch: '$($SourceInfo.Transfer)' -> '$($OutputInfo.Transfer)'")
         }
+    }
 
-        if (-not (Test-StringContainsNormalized -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries)) {
-            $errors.Add("HDR primaries mismatch: '$($SourceInfo.Primaries)' -> '$($OutputInfo.Primaries)'")
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Primaries)) {
+        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries)) {
+            $errors.Add("Primaries mismatch: '$($SourceInfo.Primaries)' -> '$($OutputInfo.Primaries)'")
         }
+    }
 
-        if (-not (Test-StringContainsNormalized -Actual $OutputInfo.Matrix -Expected $SourceInfo.Matrix)) {
-            $errors.Add("HDR matrix mismatch: '$($SourceInfo.Matrix)' -> '$($OutputInfo.Matrix)'")
+    if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Matrix)) {
+        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Matrix -Expected $SourceInfo.Matrix)) {
+            $errors.Add("Matrix mismatch: '$($SourceInfo.Matrix)' -> '$($OutputInfo.Matrix)'")
         }
     }
 
@@ -126,10 +204,31 @@ function Test-EncodedVideo {
         $errors.Add("Audio track count mismatch: $($SourceInfo.AudioTrackCount) -> $($OutputInfo.AudioTrackCount)")
     }
 
+    $sourceAudioTracks = @($SourceInfo.AudioTracks)
+    $outputAudioTracks = @($OutputInfo.AudioTracks)
+    if ($sourceAudioTracks.Count -gt 0 -or $outputAudioTracks.Count -gt 0) {
+        $trackCount = [math]::Min($sourceAudioTracks.Count, $outputAudioTracks.Count)
+        for ($index = 0; $index -lt $trackCount; $index++) {
+            if (-not (Test-StringEquivalentNormalized -Actual $outputAudioTracks[$index].Codec -Expected $sourceAudioTracks[$index].Codec)) {
+                $errors.Add("Audio codec mismatch on track $($index + 1): '$($sourceAudioTracks[$index].Codec)' -> '$($outputAudioTracks[$index].Codec)'")
+            }
+
+            if ($null -ne $sourceAudioTracks[$index].Channels -or $null -ne $outputAudioTracks[$index].Channels) {
+                if ($sourceAudioTracks[$index].Channels -ne $outputAudioTracks[$index].Channels) {
+                    $errors.Add("Audio channels mismatch on track $($index + 1): $($sourceAudioTracks[$index].Channels) -> $($outputAudioTracks[$index].Channels)")
+                }
+            }
+        }
+    }
+
     if ($ValidateTimestamps) {
         foreach ($timestampError in (Test-FileTimestampsPreserved -SourceFile $SourceFile -OutputFile $OutputFile)) {
             $errors.Add($timestampError)
         }
+    }
+
+    foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata)) {
+        $errors.Add($metadataError)
     }
 
     [pscustomobject]@{
@@ -138,4 +237,4 @@ function Test-EncodedVideo {
     }
 }
 
-Export-ModuleMember -Function Test-EncodedVideo, Test-FileTimestampsPreserved
+Export-ModuleMember -Function Test-EncodedVideo, Test-FileTimestampsPreserved, Test-MetadataPreserved

@@ -1,5 +1,97 @@
 Set-StrictMode -Version Latest
 
+function Get-ExifToolValue {
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$Object,
+
+        [Parameter(Mandatory)]
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        $property = $Object.PSObject.Properties[$name]
+        if ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+            return $property.Value
+        }
+    }
+
+    return $null
+}
+
+function ConvertTo-NullableExifDouble {
+    param($Value)
+
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $null
+    }
+
+    $normalized = ([string]$Value -replace ',', '.')
+    $match = [regex]::Match($normalized, '-?\d+(?:\.\d+)?')
+    if (-not $match.Success) {
+        return $null
+    }
+
+    return [double]::Parse($match.Value, [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function ConvertTo-NormalizedMetadataDate {
+    param($Value)
+
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $null
+    }
+
+    $text = ([string]$Value).Trim()
+    if ($text -match '^\d{4}:\d{2}:\d{2}\s+\d{2}:\d{2}:\d{2}$') {
+        $text = $text -replace '^(\d{4}):(\d{2}):(\d{2})\s+', '$1-$2-$3T'
+    } elseif ($text -match '^\d{4}:\d{2}:\d{2}\s+\d{2}:\d{2}:\d{2}.*$') {
+        $text = $text -replace '^(\d{4}):(\d{2}):(\d{2})\s+', '$1-$2-$3T'
+    }
+
+    try {
+        return ([datetime]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)).ToString('yyyy-MM-ddTHH:mm:ss')
+    } catch {
+    }
+
+    return $text
+}
+
+function ConvertFrom-ExifToolJson {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ExifToolJson,
+
+        [string]$Path
+    )
+
+    $parsed = $ExifToolJson | ConvertFrom-Json
+    if ($null -eq $parsed) {
+        throw "ExifTool JSON does not contain metadata for '$Path'."
+    }
+
+    $item = if ($parsed -is [System.Array]) { $parsed[0] } else { $parsed }
+    $gpsLatitude = ConvertTo-NullableExifDouble (Get-ExifToolValue -Object $item -Names @('GPSLatitude', 'Composite:GPSLatitude'))
+    $gpsLongitude = ConvertTo-NullableExifDouble (Get-ExifToolValue -Object $item -Names @('GPSLongitude', 'Composite:GPSLongitude'))
+    $dateTaken = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @(
+        'DateTimeOriginal',
+        'CreateDate',
+        'MediaCreateDate',
+        'TrackCreateDate',
+        'ContentCreateDate',
+        'CreationDate'
+    ))
+
+    [pscustomobject]@{
+        Path = $Path
+        DateTaken = $dateTaken
+        GpsLatitude = $gpsLatitude
+        GpsLongitude = $gpsLongitude
+        HasGps = ($null -ne $gpsLatitude -and $null -ne $gpsLongitude)
+    }
+}
+
 function Set-FileSystemTimestamps {
     [CmdletBinding()]
     param(
@@ -70,4 +162,47 @@ function Copy-VideoMetadata {
     return $output.Trim()
 }
 
-Export-ModuleMember -Function Copy-VideoMetadata
+function Get-VideoMetadataSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [string]$ExifToolPath
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Metadata file not found: $Path"
+    }
+
+    $args = @(
+        '-j'
+        '-n'
+        '-DateTimeOriginal'
+        '-CreateDate'
+        '-MediaCreateDate'
+        '-TrackCreateDate'
+        '-ContentCreateDate'
+        '-CreationDate'
+        '-GPSLatitude'
+        '-GPSLongitude'
+        $Path
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "ExifTool metadata read failed for '$Path': $output"
+    }
+
+    return ConvertFrom-ExifToolJson -ExifToolJson $output -Path $Path
+}
+
+Export-ModuleMember -Function Copy-VideoMetadata, ConvertFrom-ExifToolJson, Get-VideoMetadataSnapshot

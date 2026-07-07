@@ -18,6 +18,7 @@ Describe 'MediaAnalyzer' {
         "FrameRate": "59.940",
         "BitDepth": "10",
         "BitRate": "77200000",
+        "Rotation": "90.000",
         "transfer_characteristics": "HLG",
         "colour_primaries": "BT.2020",
         "matrix_coefficients": "BT.2020 non-constant",
@@ -25,7 +26,8 @@ Describe 'MediaAnalyzer' {
       },
       {
         "@type": "Audio",
-        "Format": "AAC"
+        "Format": "AAC",
+        "Channel(s)": "2"
       }
     ]
   }
@@ -39,9 +41,12 @@ Describe 'MediaAnalyzer' {
         $result.Height | Should Be 2160
         $result.BitDepth | Should Be 10
         $result.BitrateMbps | Should Be 77.2
+        $result.Rotation | Should Be 90
         $result.IsHdr | Should Be $true
         $result.HdrType | Should Be 'HDR Vivid'
         $result.AudioTrackCount | Should Be 1
+        $result.AudioTracks[0].Codec | Should Be 'AAC'
+        $result.AudioTracks[0].Channels | Should Be 2
     }
 
     It 'keeps SDR media classified as SDR' {
@@ -64,6 +69,11 @@ Describe 'MediaAnalyzer' {
         "transfer_characteristics": "BT.709",
         "colour_primaries": "BT.709",
         "matrix_coefficients": "BT.709"
+      },
+      {
+        "@type": "Audio",
+        "Format": "PCM",
+        "Channel(s)": "6"
       }
     ]
   }
@@ -77,5 +87,7 @@ Describe 'MediaAnalyzer' {
         $result.HdrType | Should Be $null
         $result.BitDepth | Should Be 8
         $result.DurationSeconds | Should Be 60
+        $result.AudioTracks[0].Codec | Should Be 'PCM'
+        $result.AudioTracks[0].Channels | Should Be 6
     }
 }
