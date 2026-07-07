@@ -136,6 +136,54 @@ function Test-NvEncOptionSupported {
     return $script:NvEncOptionCache[$NvEncPath] -match "(?m)(^|\s)$([regex]::Escape($OptionName))(\s|,|$)"
 }
 
+function Resolve-EncodeOutputFile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ExpectedOutputFile
+    )
+
+    if (Test-Path -LiteralPath $ExpectedOutputFile -PathType Leaf) {
+        return $ExpectedOutputFile
+    }
+
+    $outputDirectory = Split-Path -Path $ExpectedOutputFile -Parent
+    $expectedName = [System.IO.Path]::GetFileNameWithoutExtension($ExpectedOutputFile)
+    $expectedExtension = [System.IO.Path]::GetExtension($ExpectedOutputFile)
+
+    if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
+        return $null
+    }
+
+    $candidates = @(
+        Get-ChildItem -LiteralPath $outputDirectory -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -notlike 'nvenc_stdout_*' -and
+                $_.Name -notlike 'nvenc_stderr_*'
+            }
+    )
+
+    $exactBaseNameCandidates = @(
+        $candidates | Where-Object {
+            [System.IO.Path]::GetFileNameWithoutExtension($_.Name) -eq $expectedName
+        }
+    )
+
+    if ($exactBaseNameCandidates.Count -eq 1) {
+        return $exactBaseNameCandidates[0].FullName
+    }
+
+    $sameExtensionCandidates = @(
+        $candidates | Where-Object { $_.Extension -ieq $expectedExtension }
+    )
+
+    if ($sameExtensionCandidates.Count -eq 1) {
+        return $sameExtensionCandidates[0].FullName
+    }
+
+    return $null
+}
+
 function New-EncodeJob {
     [CmdletBinding()]
     param(
@@ -333,10 +381,21 @@ function Invoke-EncodeJob {
         }
     }
 
+    $actualOutputFile = Resolve-EncodeOutputFile -ExpectedOutputFile $Job.OutputFile
+    if ([string]::IsNullOrWhiteSpace($actualOutputFile)) {
+        $directoryListing = if (Test-Path -LiteralPath $outputDirectory -PathType Container) {
+            (Get-ChildItem -LiteralPath $outputDirectory -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
+        } else {
+            '<missing output directory>'
+        }
+
+        throw ("NVEncC finished with exit code {0} but output file was not found. Expected='{1}'. Directory='{2}'. Files=[{3}]." -f $exitCode, $Job.OutputFile, $outputDirectory, $directoryListing)
+    }
+
     [pscustomobject]@{
         Success = ($exitCode -eq 0)
         ExitCode = $exitCode
-        OutputFile = $Job.OutputFile
+        OutputFile = $actualOutputFile
         Duration = $stopwatch.Elapsed
         CommandLine = @($Job.Arguments) -join ' '
         Log = $logBuilder.ToString().Trim()

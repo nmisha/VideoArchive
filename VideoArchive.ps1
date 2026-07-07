@@ -223,7 +223,12 @@ try {
 
     $files = @(Get-VideoFiles -InputPath $resolvedInputPath -Extensions $config.Extensions)
     $logger = Initialize-VideoArchiveLogger -LogRoot $config.Output.LogsFolder
-    $tempRoot = Join-Path -Path $config.Output.TempFolder -ChildPath $logger.RunId
+    $tempBase = [string]$config.Output.TempFolder
+    if (-not [System.IO.Path]::IsPathRooted($tempBase)) {
+        $tempBase = Join-Path -Path $projectRoot -ChildPath $tempBase
+    }
+
+    $tempRoot = Join-Path -Path $tempBase -ChildPath $logger.RunId
 
     if (-not (Test-Path -LiteralPath $tempRoot -PathType Container)) {
         New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
@@ -428,6 +433,7 @@ try {
             $tempOutputFile = Get-TempOutputPath -TempRoot $tempRoot -RelativePath $relativeOutputPath
             $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -NvEncPath $config.Tools.NvEnc -Preset $config.Preset
             $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry }
+            $tempOutputFile = $encodeResult.OutputFile
 
             if (-not $encodeResult.Success) {
                 $summary.Failed++
