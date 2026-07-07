@@ -133,7 +133,19 @@ It does not know how `NVEncC` arguments are built.
 
 ### `Encoder.psm1`
 
-Uses `NVEncC` only.
+Provides encoder backend abstraction.
+
+Current backends:
+
+- `nvenc`
+- `qsv`
+- `amf`
+- `software`
+
+Current codecs:
+
+- `hevc`
+- `av1` for supported hardware backends
 
 Builds an `EncodeJob` and runs it. Also parses live encoder telemetry for:
 
@@ -147,9 +159,16 @@ Rules:
 
 - no resize;
 - no FPS conversion;
-- HDR encodes to HEVC Main10 10-bit;
-- SDR encodes to HEVC Main 8-bit;
+- HDR defaults to HEVC Main10 10-bit;
+- SDR defaults to HEVC Main 8-bit;
 - audio stays in copy mode.
+
+Selection policy:
+
+- backend can be explicitly requested;
+- otherwise `auto` selects the first available backend from config order;
+- codec can be explicitly requested;
+- HDR AV1 is disabled by default and falls back to HEVC unless config allows it.
 
 ### `Metadata.psm1`
 

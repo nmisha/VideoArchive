@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0
+
+- Reworked `Encoder.psm1` into a backend-aware encoder abstraction.
+- Added encoder backend selection: `auto`, `nvenc`, `qsv`, `amf`, and `software`.
+- Added output codec selection: `hevc` or `av1`.
+- Added optional Intel Quick Sync support through `QSVEncC`.
+- Added optional AMD AMF support through `VCEEncC`.
+- Added optional software x265 fallback through `FFmpeg + libx265`.
+- Added backend auto-selection based on available tools and configured backend order.
+- Added basic multi-GPU support via configurable preferred device index for Rigaya backends.
+- Added safety policy that disables HDR AV1 by default and falls back to HEVC unless explicitly allowed.
+- Updated validation so expected output codec can be `HEVC` or `AV1`.
+- Added encoder unit tests for codec resolution, backend auto-selection, NVENC AV1 jobs, and software fallback jobs.
+
 ## 1.5.0
 
 - Improved console progress visualization with a text progress bar and processed-size tracking.

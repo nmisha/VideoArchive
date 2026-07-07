@@ -9,6 +9,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Recursively processes a file or folder.
 - Uses `MediaInfo` for video analysis only.
 - Uses `NVEncC` for encoding only.
+- Supports multiple encoder backends: `NVEncC`, `QSVEncC`, `VCEEncC`, and software `FFmpeg + libx265`.
 - Uses `ExifTool` for metadata copy and capture-date restoration only.
 - Detects `HDR Vivid`, `Dolby Vision`, `HDR10+`, `HLG`, `PQ`, and `SDR`.
 - Encodes HDR to HEVC Main10 10-bit.
@@ -19,6 +20,8 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Writes TXT, CSV, and JSONL logs.
 - Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
+- Supports `-EncoderBackend auto|nvenc|qsv|amf|software`.
+- Supports `-OutputCodec auto|hevc|av1`.
 - Validates encoded files before accepting them.
 - Shows a text progress bar, dashboard counters, total ETA, per-file size results, and an expanded final summary.
 
@@ -88,6 +91,14 @@ ExifTool/exiftool.exe
 MediaInfo/MediaInfo.exe
 ```
 
+Optional backends:
+
+```text
+QSVEncC/QSVEncC64.exe
+VCEEncC/VCEEncC64.exe
+FFmpeg/ffmpeg.exe
+```
+
 ## Run
 
 Interactive:
@@ -132,6 +143,18 @@ Resume from a specific log and only retry failed files:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -ResumeFrom ".\Logs\VideoArchive_20260707_120000.jsonl" -ResumeMode failed
 ```
 
+Use NVENC AV1 for SDR files:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -EncoderBackend nvenc -OutputCodec av1
+```
+
+Force software x265 fallback:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -EncoderBackend software -OutputCodec hevc
+```
+
 ## Presets
 
 - `Archive` - Maximum quality for long-term archive
@@ -147,3 +170,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPat
 - Validation happens after encode and metadata copy.
 - `HDR Vivid -> HLG` is treated as a warning when base HDR is preserved.
 - Live UI uses `NVEncC` telemetry for per-file ETA and combines it with average completed-file time for total ETA.
+- `AV1` output is supported for multi-encoder workflows, but HDR AV1 is disabled by default and falls back to HEVC unless explicitly enabled in config.

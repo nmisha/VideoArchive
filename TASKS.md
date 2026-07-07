@@ -89,10 +89,11 @@
 
 ## v2.0
 
-- [ ] AV1 NVENC.
-- [ ] Intel QSV.
-- [ ] AMD AMF.
-- [ ] Multi-GPU support.
+- [x] AV1 NVENC.
+- [x] Intel QSV.
+- [x] AMD AMF.
+- [x] Multi-GPU support.
+- [x] Software x265 fallback.
 - [ ] Queue manager.
 - [ ] SQLite history.
 

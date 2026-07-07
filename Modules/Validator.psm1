@@ -314,7 +314,10 @@ function Test-EncodedVideo {
         [ValidateSet('preserve', 'captureDate')]
         [string]$FileTimestampMode = 'preserve',
 
-        [string]$FileTimestampOffset = '+00:00'
+        [string]$FileTimestampOffset = '+00:00',
+
+        [ValidateSet('HEVC', 'AV1')]
+        [string]$ExpectedOutputCodec = 'HEVC'
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -371,8 +374,8 @@ function Test-EncodedVideo {
         $errors.Add("SDR output bit depth must be 8-bit, got $($OutputInfo.BitDepth)")
     }
 
-    if ($OutputInfo.Codec -ne 'HEVC') {
-        $errors.Add("Output codec must be HEVC, got $($OutputInfo.Codec)")
+    if ($OutputInfo.Codec -ne $ExpectedOutputCodec) {
+        $errors.Add("Output codec must be $ExpectedOutputCodec, got $($OutputInfo.Codec)")
     }
 
     if ($SourceInfo.AudioTrackCount -ne $OutputInfo.AudioTrackCount) {

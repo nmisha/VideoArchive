@@ -7,7 +7,11 @@
     [switch]$Resume,
     [string]$ResumeFrom,
     [ValidateSet('failed', 'unfinished', 'all')]
-    [string]$ResumeMode = 'unfinished'
+    [string]$ResumeMode = 'unfinished',
+    [ValidateSet('auto', 'nvenc', 'qsv', 'amf', 'software')]
+    [string]$EncoderBackend = 'auto',
+    [ValidateSet('auto', 'hevc', 'av1')]
+    [string]$OutputCodec = 'auto'
 )
 
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -39,6 +43,8 @@ foreach ($module in $requiredModules) {
 }
 
 $script:VideoArchivePresetName = $null
+$script:VideoArchiveEncoderBackend = $null
+$script:VideoArchiveOutputCodec = $null
 
 function Get-ResultClassForAction {
     param([string]$Action)
@@ -119,7 +125,9 @@ function New-VideoArchiveRecord {
         [Nullable[long]]$SourceFileSizeBytes,
         [string]$SourceLastWriteTimeUtc,
         [string]$SourceCreationTimeUtc,
-        [Nullable[long]]$OutputFileSizeBytes
+        [Nullable[long]]$OutputFileSizeBytes,
+        [string]$EncoderBackend,
+        [string]$OutputCodec
     )
 
     if ([string]::IsNullOrWhiteSpace($ResultClass)) {
@@ -132,6 +140,14 @@ function New-VideoArchiveRecord {
 
     if ([string]::IsNullOrWhiteSpace($PresetName)) {
         $PresetName = $script:VideoArchivePresetName
+    }
+
+    if ([string]::IsNullOrWhiteSpace($EncoderBackend)) {
+        $EncoderBackend = $script:VideoArchiveEncoderBackend
+    }
+
+    if ([string]::IsNullOrWhiteSpace($OutputCodec)) {
+        $OutputCodec = $script:VideoArchiveOutputCodec
     }
 
     if (($null -eq $SourceFileSizeBytes -or [string]::IsNullOrWhiteSpace($SourceLastWriteTimeUtc) -or [string]::IsNullOrWhiteSpace($SourceCreationTimeUtc)) -and -not [string]::IsNullOrWhiteSpace($SourcePath) -and (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
@@ -190,6 +206,8 @@ function New-VideoArchiveRecord {
         SourceLastWriteTimeUtc = $SourceLastWriteTimeUtc
         SourceCreationTimeUtc = $SourceCreationTimeUtc
         OutputFileSizeBytes = $OutputFileSizeBytes
+        EncoderBackend = $EncoderBackend
+        OutputCodec = $OutputCodec
     }
 }
 
@@ -287,6 +305,8 @@ try {
 
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
     $script:VideoArchivePresetName = $config.PresetName
+    $script:VideoArchiveEncoderBackend = $EncoderBackend
+    $script:VideoArchiveOutputCodec = $OutputCodec
     Test-VideoArchiveTools -Config $config | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
@@ -316,6 +336,7 @@ try {
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $($files.Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
+    Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec"
 
     if ($null -ne $resumePlan) {
         Write-VideoArchiveStatus -Message "Resume: $resumeLogPath"
@@ -323,7 +344,7 @@ try {
         Write-VideoArchiveStatus -Message "Resume Skipped: $($resumePlan.SkippedFiles.Count)"
     }
 
-    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode"
+    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec"
 
     if ($files.Count -eq 0) {
         $message = if ($null -ne $resumePlan) { 'No files scheduled after resume filtering.' } else { 'No supported video files found.' }
@@ -415,6 +436,8 @@ try {
             $relativeOutputPath = [System.IO.Path]::ChangeExtension($file.RelativePath, $outputExtension)
             $outputRoot = if ($videoInfo.IsHdr) { $outputRoots.HDR } else { $outputRoots.SDR }
             $finalOutputFile = Join-Path -Path $outputRoot -ChildPath $relativeOutputPath
+            $requestedCodec = if ($OutputCodec -eq 'auto') { $null } else { $OutputCodec }
+            $resolvedOutputCodec = (Resolve-OutputCodec -VideoInfo $videoInfo -EncoderConfig $config.Encoder -RequestedCodec $requestedCodec).ToUpperInvariant()
 
             if (-not $captureDateResult.Success -and [bool]$config.Dates.strictDateMode) {
                 $summary.Skipped++
@@ -456,13 +479,15 @@ try {
                     -CaptureDateRecognized $false `
                     -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $false)
+                    -DateValidationSuccess $false `
+                    -OutputCodec $resolvedOutputCodec `
+                    -EncoderBackend $(if ($EncoderBackend -eq 'auto') { 'auto' } else { $EncoderBackend }))
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
-            $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -Force:$Force -NoSmartSkip:$NoSmartSkip
+            $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip
             Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
 
             if ($decision.Action -eq 'Skip') {
@@ -503,7 +528,9 @@ try {
                     -CaptureDateRecognized $captureDateResult.Success `
                     -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $captureDateResult.Success)
+                    -DateValidationSuccess $captureDateResult.Success `
+                    -OutputCodec $resolvedOutputCodec `
+                    -EncoderBackend $(if ($EncoderBackend -eq 'auto') { 'auto' } else { $EncoderBackend }))
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
@@ -547,14 +574,16 @@ try {
                     -CaptureDateRecognized $captureDateResult.Success `
                     -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $captureDateResult.Success)
+                    -DateValidationSuccess $captureDateResult.Success `
+                    -OutputCodec $resolvedOutputCodec `
+                    -EncoderBackend $(if ($EncoderBackend -eq 'auto') { 'auto' } else { $EncoderBackend }))
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
             }
 
             $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
-            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -NvEncPath $config.Tools.NvEnc -Preset $config.Preset
+            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec
             $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $files.Count -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
             $tempOutputFile = $encodeResult.OutputFile
 
@@ -564,7 +593,7 @@ try {
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `
                     -Action 'Failed' `
-                    -Reason ("NVEncC failed with exit code {0}. {1}" -f $encodeResult.ExitCode, $encodeResult.Log) `
+                    -Reason ("{0} failed with exit code {1}. {2}" -f $job.EncoderLabel, $encodeResult.ExitCode, $encodeResult.Log) `
                     -OutputGroup $decision.OutputGroup `
                     -Codec $videoInfo.Codec `
                     -BitrateMbps $videoInfo.BitrateMbps `
@@ -596,7 +625,9 @@ try {
                     -CaptureDateRecognized $captureDateResult.Success `
                     -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $false)
+                    -DateValidationSuccess $false `
+                    -OutputCodec $job.Codec.ToUpperInvariant() `
+                    -EncoderBackend $job.Backend)
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
@@ -615,7 +646,7 @@ try {
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
             $outputMetadata = Get-VideoMetadataSnapshot -Path $finalOutputFile -ExifToolPath $config.Tools.ExifTool
-            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -FileTimestampOffset ([string]$config.Dates.defaultTimezoneOffset)
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -FileTimestampOffset ([string]$config.Dates.defaultTimezoneOffset) -ExpectedOutputCodec $job.Codec.ToUpperInvariant()
 
             if (-not $validation.Success) {
                 $summary.Failed++
@@ -655,7 +686,9 @@ try {
                     -CaptureDateRecognized $captureDateResult.Success `
                     -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $false)
+                    -DateValidationSuccess $false `
+                    -OutputCodec $job.Codec.ToUpperInvariant() `
+                    -EncoderBackend $job.Backend)
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
@@ -710,7 +743,9 @@ try {
                     -CaptureDateRecognized $captureDateResult.Success `
                     -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
                     -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                    -DateValidationSuccess $validation.Success)
+                    -DateValidationSuccess $validation.Success `
+                    -OutputCodec $job.Codec.ToUpperInvariant() `
+                    -EncoderBackend $job.Backend)
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
@@ -758,7 +793,9 @@ try {
                 -CaptureDateRecognized $captureDateResult.Success `
                 -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
                 -StrictDateMode ([bool]$config.Dates.strictDateMode) `
-                -DateValidationSuccess $validation.Success)
+                -DateValidationSuccess $validation.Success `
+                -OutputCodec $job.Codec.ToUpperInvariant() `
+                -EncoderBackend $job.Backend)
             $completedCount++
         } catch {
             $summary.Failed++

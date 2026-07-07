@@ -31,8 +31,23 @@
     "setAllCommonDateTags":  true,
     "strictDateMode":  false
   },
+    "encoder":  {
+                    "defaultBackend":  "auto",
+                    "defaultCodec":  "hevc",
+                    "allowHdrAv1":  false,
+                    "autoBackendOrder":  [
+                                             "nvenc",
+                                             "qsv",
+                                             "amf",
+                                             "software"
+                                         ],
+                    "preferredGpu":  0
+                },
     "tools":  {
                   "nvenc":  "NVEncC/NVEncC64.exe",
+                  "qsvenc":  "QSVEncC/QSVEncC64.exe",
+                  "amfenc":  "VCEEncC/VCEEncC64.exe",
+                  "ffmpeg":  "FFmpeg/ffmpeg.exe",
                   "exiftool":  "ExifTool/exiftool.exe",
                   "mediainfo":  "MediaInfo/MediaInfo.exe"
               }

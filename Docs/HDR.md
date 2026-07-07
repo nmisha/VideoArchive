@@ -25,6 +25,12 @@ HEVC Main10
 --colormatrix auto
 ```
 
+Current multi-encoder safety policy:
+
+- HDR defaults to `HEVC`;
+- HDR AV1 is disabled by default;
+- if AV1 is requested for HDR while `allowHdrAv1=false`, VideoArchive falls back to HEVC.
+
 Audio is always copied with `--audio-copy`.
 
 ## Dynamic HDR Metadata

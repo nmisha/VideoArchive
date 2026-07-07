@@ -69,11 +69,11 @@ Goal: better operator feedback during long runs.
 
 Goal: support more hardware backends.
 
-- NVENC AV1.
-- Intel QSV.
-- AMD AMF.
-- Software x265 fallback.
-- Multi-GPU support.
+- NVENC AV1 [Done]
+- Intel QSV [Done]
+- AMD AMF [Done]
+- Software x265 fallback [Done]
+- Multi-GPU support [Done]
 
 ## v3.0 - GUI
 

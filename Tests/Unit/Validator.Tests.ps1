@@ -482,4 +482,26 @@ Describe 'Validator' {
         $result.Success | Should Be $false
         ($result.Errors -join ' | ') | Should Match 'strict date mode'
     }
+
+    It 'accepts AV1 when AV1 is the expected output codec' {
+        $sourceFile = Join-Path $tempRoot 'source_av1_ok.mp4'
+        $outputFile = Join-Path $tempRoot 'output_av1_ok.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 30; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'AVC'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+        $outputInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 30; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'AV1'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ExpectedOutputCodec AV1
+
+        $result.Success | Should Be $true
+    }
 }

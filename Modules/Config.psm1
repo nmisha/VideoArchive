@@ -13,6 +13,22 @@ function Resolve-VideoArchivePath {
     return [System.IO.Path]::GetFullPath((Join-Path -Path $ProjectRoot -ChildPath $RelativePath))
 }
 
+function Resolve-OptionalVideoArchivePath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ProjectRoot,
+
+        [string]$RelativePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RelativePath)) {
+        return $null
+    }
+
+    return Resolve-VideoArchivePath -ProjectRoot $ProjectRoot -RelativePath $RelativePath
+}
+
 function Read-VideoArchiveJson {
     [CmdletBinding()]
     param(
@@ -95,8 +111,37 @@ function Import-VideoArchiveConfig {
                 strictDateMode = $false
             }
         }
+        Encoder = if ($null -ne $config.encoder) {
+            if ($null -eq $config.encoder.PSObject.Properties['defaultBackend']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName defaultBackend -NotePropertyValue 'auto'
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['defaultCodec']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName defaultCodec -NotePropertyValue 'hevc'
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['allowHdrAv1']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName allowHdrAv1 -NotePropertyValue $false
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['autoBackendOrder']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName autoBackendOrder -NotePropertyValue @('nvenc', 'qsv', 'amf', 'software')
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['preferredGpu']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName preferredGpu -NotePropertyValue 0
+            }
+            $config.encoder
+        } else {
+            [pscustomobject]@{
+                defaultBackend = 'auto'
+                defaultCodec = 'hevc'
+                allowHdrAv1 = $false
+                autoBackendOrder = @('nvenc', 'qsv', 'amf', 'software')
+                preferredGpu = 0
+            }
+        }
         Tools = [pscustomobject]@{
             NvEnc = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.nvenc
+            QsvEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.qsvenc
+            AmfEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.amfenc
+            Ffmpeg = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.ffmpeg
             ExifTool = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.exiftool
             MediaInfo = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.mediainfo
         }
@@ -136,7 +181,6 @@ function Test-VideoArchiveTools {
     )
 
     $requiredTools = @{
-        NVEncC = $Config.Tools.NvEnc
         ExifTool = $Config.Tools.ExifTool
         MediaInfo = $Config.Tools.MediaInfo
     }
@@ -150,6 +194,17 @@ function Test-VideoArchiveTools {
 
     if ($missing.Count -gt 0) {
         throw "Required tools are missing:`n$($missing -join [Environment]::NewLine)"
+    }
+
+    $encoderTools = @(
+        @{ Name = 'NVEncC'; Path = $Config.Tools.NvEnc }
+        @{ Name = 'QSVEncC'; Path = $Config.Tools.QsvEnc }
+        @{ Name = 'VCEEncC'; Path = $Config.Tools.AmfEnc }
+        @{ Name = 'FFmpeg'; Path = $Config.Tools.Ffmpeg }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.Path) -and (Test-Path -LiteralPath $_.Path -PathType Leaf) }
+
+    if ($encoderTools.Count -eq 0) {
+        throw 'No supported encoder tool was found. Expected one of NVEncC, QSVEncC, VCEEncC, or FFmpeg.'
     }
 
     return $true

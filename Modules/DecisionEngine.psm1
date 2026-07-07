@@ -35,6 +35,8 @@ function Get-EncodeDecision {
 
         [string]$PresetName,
 
+        [string]$TargetCodec = 'HEVC',
+
         [switch]$Force,
 
         [switch]$NoSmartSkip
@@ -118,9 +120,9 @@ function Get-EncodeDecision {
             }
         }
 
-        return [pscustomobject]@{
-            Action = 'Encode'
-            Reason = "HEVC bitrate $($VideoInfo.BitrateMbps) Mbps is above $threshold Mbps threshold"
+            return [pscustomobject]@{
+                Action = 'Encode'
+                Reason = "HEVC bitrate $($VideoInfo.BitrateMbps) Mbps is above $threshold Mbps threshold"
             OutputGroup = $outputGroup
             SmartSkipApplied = $true
         }
@@ -128,7 +130,7 @@ function Get-EncodeDecision {
 
     return [pscustomobject]@{
         Action = 'Encode'
-        Reason = "Codec $($VideoInfo.Codec) requires HEVC archive copy"
+        Reason = "Codec $($VideoInfo.Codec) requires $($TargetCodec.ToUpperInvariant()) archive copy"
         OutputGroup = $outputGroup
         SmartSkipApplied = $true
     }

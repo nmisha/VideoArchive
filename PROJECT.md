@@ -32,6 +32,18 @@ Used only for analysis.
 
 Used only for encoding.
 
+### `QSVEncC`
+
+Used as an optional Intel Quick Sync backend.
+
+### `VCEEncC`
+
+Used as an optional AMD AMF backend.
+
+### `FFmpeg`
+
+Used as an optional software `libx265` fallback backend.
+
 ### `ExifTool`
 
 Used only for metadata copy and capture-date tag restoration.
@@ -45,6 +57,12 @@ Used only for metadata copy and capture-date tag restoration.
 - audio -> copy
 - no resize
 - no FPS conversion
+
+Multi-encoder policy:
+
+- backend selection can be `auto`, `nvenc`, `qsv`, `amf`, or `software`;
+- SDR can target `HEVC` or `AV1`;
+- HDR AV1 is disabled by default for safety and currently falls back to HEVC unless explicitly enabled in config.
 
 ### Output structure
 
