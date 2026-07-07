@@ -72,12 +72,22 @@ Describe 'Validator' {
 
         $outputMetadata = [pscustomobject]@{
             DateTaken = '2026-07-05T12:03:00'
+            QuickTimeMediaCreateDate = '2026-07-05T12:03:01'
+            QuickTimeCreateDate = '2026-07-05T12:03:01'
             GpsLatitude = 55.7558
             GpsLongitude = 37.6176
             HasGps = $true
         }
 
-        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata
+        $captureDateResult = [pscustomobject]@{
+            Success = $true
+            DateTime = [datetime]'2026-07-05T12:03:00'
+            Source = 'Metadata'
+            Pattern = 'QuickTime:MediaCreateDate'
+            Warnings = @()
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ValidateTimestamps -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult
 
         $result.Success | Should Be $true
         $result.Errors.Count | Should Be 0
@@ -338,5 +348,57 @@ Describe 'Validator' {
 
         $result.Success | Should Be $false
         ($result.Errors -join ' | ') | Should Match 'Resolution mismatch'
+    }
+
+    It 'warns when capture date is missing in non-strict mode' {
+        $sourceFile = Join-Path $tempRoot 'source_date_warn.mp4'
+        $outputFile = Join-Path $tempRoot 'output_date_warn.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 30; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+        $outputInfo = $sourceInfo
+        $captureDateResult = [pscustomobject]@{
+            Success = $false
+            DateTime = $null
+            Source = 'None'
+            Pattern = $null
+            Warnings = @('Capture date could not be determined.', 'Capture date was left empty.')
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -CaptureDateResult $captureDateResult
+
+        $result.Success | Should Be $true
+        ($result.Warnings -join ' | ') | Should Match 'Capture date could not be determined'
+    }
+
+    It 'fails when capture date is missing in strict mode' {
+        $sourceFile = Join-Path $tempRoot 'source_date_strict.mp4'
+        $outputFile = Join-Path $tempRoot 'output_date_strict.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 30; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+        $outputInfo = $sourceInfo
+        $captureDateResult = [pscustomobject]@{
+            Success = $false
+            DateTime = $null
+            Source = 'None'
+            Pattern = $null
+            Warnings = @('Capture date could not be determined.')
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -CaptureDateResult $captureDateResult -StrictDateMode $true
+
+        $result.Success | Should Be $false
+        ($result.Errors -join ' | ') | Should Match 'strict date mode'
     }
 }

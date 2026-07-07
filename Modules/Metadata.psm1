@@ -74,18 +74,28 @@ function ConvertFrom-ExifToolJson {
     $item = if ($parsed -is [System.Array]) { $parsed[0] } else { $parsed }
     $gpsLatitude = ConvertTo-NullableExifDouble (Get-ExifToolValue -Object $item -Names @('GPSLatitude', 'Composite:GPSLatitude'))
     $gpsLongitude = ConvertTo-NullableExifDouble (Get-ExifToolValue -Object $item -Names @('GPSLongitude', 'Composite:GPSLongitude'))
-    $dateTaken = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @(
-        'DateTimeOriginal',
-        'CreateDate',
-        'MediaCreateDate',
-        'TrackCreateDate',
-        'ContentCreateDate',
-        'CreationDate'
-    ))
+    $quickTimeMediaCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('QuickTime:MediaCreateDate', 'MediaCreateDate'))
+    $quickTimeCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('QuickTime:CreateDate', 'CreateDate'))
+    $quickTimeTrackCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('QuickTime:TrackCreateDate', 'TrackCreateDate'))
+    $exifDateTimeOriginal = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('EXIF:DateTimeOriginal', 'DateTimeOriginal'))
+    $xmpCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('XMP:CreateDate'))
+    $keysCreationDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('Keys:CreationDate', 'CreationDate'))
+    $dateTaken = $exifDateTimeOriginal
+    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeMediaCreateDate }
+    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeCreateDate }
+    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeTrackCreateDate }
+    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $xmpCreateDate }
+    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $keysCreationDate }
 
     [pscustomobject]@{
         Path = $Path
         DateTaken = $dateTaken
+        QuickTimeMediaCreateDate = $quickTimeMediaCreateDate
+        QuickTimeCreateDate = $quickTimeCreateDate
+        QuickTimeTrackCreateDate = $quickTimeTrackCreateDate
+        ExifDateTimeOriginal = $exifDateTimeOriginal
+        XmpCreateDate = $xmpCreateDate
+        KeysCreationDate = $keysCreationDate
         GpsLatitude = $gpsLatitude
         GpsLongitude = $gpsLongitude
         HasGps = ($null -ne $gpsLatitude -and $null -ne $gpsLongitude)
@@ -181,9 +191,14 @@ function Get-VideoMetadataSnapshot {
         '-n'
         '-DateTimeOriginal'
         '-CreateDate'
+        '-QuickTime:MediaCreateDate'
+        '-QuickTime:CreateDate'
+        '-QuickTime:TrackCreateDate'
         '-MediaCreateDate'
         '-TrackCreateDate'
         '-ContentCreateDate'
+        '-XMP:CreateDate'
+        '-Keys:CreationDate'
         '-CreationDate'
         '-GPSLatitude'
         '-GPSLongitude'

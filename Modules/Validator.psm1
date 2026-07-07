@@ -77,6 +77,87 @@ function Test-MetadataPreserved {
     return @($errors)
 }
 
+function Test-CaptureDateValidation {
+    [CmdletBinding()]
+    param(
+        [psobject]$CaptureDateResult,
+
+        [psobject]$OutputMetadata,
+
+        [bool]$StrictDateMode,
+
+        [double]$ToleranceSeconds = 2
+    )
+
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $errors = New-Object System.Collections.Generic.List[string]
+
+    if ($null -eq $CaptureDateResult) {
+        return [pscustomobject]@{
+            Warnings = @($warnings)
+            Errors = @($errors)
+        }
+    }
+
+    if (-not $CaptureDateResult.Success) {
+        foreach ($warning in @($CaptureDateResult.Warnings)) {
+            $warnings.Add($warning)
+        }
+
+        if ($StrictDateMode) {
+            $errors.Add('Capture date could not be determined in strict date mode.')
+        }
+
+        return [pscustomobject]@{
+            Warnings = @($warnings)
+            Errors = @($errors)
+        }
+    }
+
+    if ($null -eq $OutputMetadata) {
+        $errors.Add('Output metadata are not available for capture date validation.')
+        return [pscustomobject]@{
+            Warnings = @($warnings)
+            Errors = @($errors)
+        }
+    }
+
+    $candidateDates = @(
+        $OutputMetadata.QuickTimeMediaCreateDate
+        $OutputMetadata.QuickTimeCreateDate
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+    if ($candidateDates.Count -eq 0) {
+        $errors.Add('Output capture date tags are missing.')
+        return [pscustomobject]@{
+            Warnings = @($warnings)
+            Errors = @($errors)
+        }
+    }
+
+    $expected = $CaptureDateResult.DateTime
+    $matched = $false
+    foreach ($candidateDate in $candidateDates) {
+        try {
+            $actual = [datetime]::Parse($candidateDate, [System.Globalization.CultureInfo]::InvariantCulture)
+            if ([math]::Abs(($expected - $actual).TotalSeconds) -le $ToleranceSeconds) {
+                $matched = $true
+                break
+            }
+        } catch {
+        }
+    }
+
+    if (-not $matched) {
+        $errors.Add("Capture date mismatch: expected $($expected.ToString('yyyy-MM-ddTHH:mm:ss'))")
+    }
+
+    [pscustomobject]@{
+        Warnings = @($warnings)
+        Errors = @($errors)
+    }
+}
+
 function Test-HdrCompatibility {
     [CmdletBinding()]
     param(
@@ -177,7 +258,11 @@ function Test-EncodedVideo {
 
         [psobject]$SourceMetadata,
 
-        [psobject]$OutputMetadata
+        [psobject]$OutputMetadata,
+
+        [psobject]$CaptureDateResult,
+
+        [bool]$StrictDateMode
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -279,6 +364,14 @@ function Test-EncodedVideo {
 
     foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata)) {
         $errors.Add($metadataError)
+    }
+
+    $captureDateValidation = Test-CaptureDateValidation -CaptureDateResult $CaptureDateResult -OutputMetadata $OutputMetadata -StrictDateMode:$StrictDateMode
+    foreach ($warning in $captureDateValidation.Warnings) {
+        $warnings.Add($warning)
+    }
+    foreach ($error in $captureDateValidation.Errors) {
+        $errors.Add($error)
     }
 
     [pscustomobject]@{

@@ -2,6 +2,13 @@
 
 ## 1.3.0
 
+- Added `DateResolver.psm1` for capture date extraction from metadata or file names.
+- Added capture date rules to `config.json`, including `strictDateMode`.
+- Added pre-encode capture date resolution and strict/non-strict handling in the main workflow.
+- Added capture date restoration to output files when metadata are missing and the date is recovered from the file name.
+- Added capture date validation against QuickTime output tags with warning/error behavior.
+- Extended CSV/JSONL logs with capture date fields and warnings.
+- Added unit tests for filename parsing and capture date resolution priority.
 - Improved preset tuning for HDR and SDR archive targets.
 - Extended `NVEncC` command construction with preset-driven `bframes`, `ref`, adaptive I/B, temporal AQ, and optional capability-checked switches.
 - Kept audio in copy mode only throughout the encode pipeline.

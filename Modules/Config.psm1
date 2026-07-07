@@ -69,6 +69,17 @@ function Import-VideoArchiveConfig {
             TempFolder = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.output.tempFolder
         }
         Metadata = $config.metadata
+        Dates = if ($null -ne $config.dates) {
+            $config.dates
+        } else {
+            [pscustomobject]@{
+                timezoneMode = 'local'
+                defaultTimezoneOffset = '+03:00'
+                preferFileNameOverFileSystemDates = $true
+                setAllCommonDateTags = $true
+                strictDateMode = $false
+            }
+        }
         Tools = [pscustomobject]@{
             NvEnc = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.nvenc
             ExifTool = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.exiftool

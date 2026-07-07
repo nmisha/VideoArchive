@@ -81,6 +81,31 @@ function Write-VideoArchiveStatus {
     Write-Host $Message -ForegroundColor $color
 }
 
+function Write-CaptureDateStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$FileName,
+
+        [Parameter(Mandatory)]
+        [psobject]$CaptureDateResult
+    )
+
+    $dateText = if ($CaptureDateResult.Success -and $null -ne $CaptureDateResult.DateTime) {
+        $CaptureDateResult.DateTime.ToString('yyyy-MM-dd HH:mm:ss')
+    } else {
+        'n/a'
+    }
+
+    $sourceText = if ([string]::IsNullOrWhiteSpace([string]$CaptureDateResult.Source)) {
+        'None'
+    } else {
+        [string]$CaptureDateResult.Source
+    }
+
+    Write-VideoArchiveStatus -Message ("CaptureDate: {0} | Source: {1} | File: {2}" -f $dateText, $sourceText, $FileName) -Level $(if ($CaptureDateResult.Success) { 'Info' } else { 'Warn' })
+}
+
 function Update-VideoArchiveProgress {
     [CmdletBinding()]
     param(
@@ -172,4 +197,4 @@ function Show-VideoArchiveSummary {
     Write-Host ("SDR     : {0}" -f $Summary.Sdr)
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary

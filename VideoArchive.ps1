@@ -22,6 +22,7 @@ $requiredModules = @(
     'MediaAnalyzer.psm1',
     'DecisionEngine.psm1',
     'Encoder.psm1',
+    'DateResolver.psm1',
     'Metadata.psm1',
     'Logger.psm1',
     'ConsoleUI.psm1',
@@ -64,7 +65,14 @@ function New-VideoArchiveRecord {
         [string]$SourcePrimaries,
         [string]$OutputPrimaries,
         [Nullable[int]]$SourceBitDepth,
-        [Nullable[int]]$OutputBitDepth
+        [Nullable[int]]$OutputBitDepth,
+        [string]$CaptureDate,
+        [string]$CaptureDateSource,
+        [string]$CaptureDatePattern,
+        [bool]$CaptureDateRecognized = $false,
+        [string]$CaptureDateWarnings,
+        [bool]$StrictDateMode = $false,
+        [bool]$DateValidationSuccess = $false
     )
 
     [pscustomobject][ordered]@{
@@ -98,6 +106,13 @@ function New-VideoArchiveRecord {
         OutputPrimaries = $OutputPrimaries
         SourceBitDepth = $SourceBitDepth
         OutputBitDepth = $OutputBitDepth
+        CaptureDate = $CaptureDate
+        CaptureDateSource = $CaptureDateSource
+        CaptureDatePattern = $CaptureDatePattern
+        CaptureDateRecognized = $CaptureDateRecognized
+        CaptureDateWarnings = $CaptureDateWarnings
+        StrictDateMode = $StrictDateMode
+        DateValidationSuccess = $DateValidationSuccess
     }
 }
 
@@ -249,16 +264,68 @@ try {
         try {
             $videoInfo = Get-VideoInfo -Path $file.Path -MediaInfoPath $config.Tools.MediaInfo
             $sourceMetadata = Get-VideoMetadataSnapshot -Path $file.Path -ExifToolPath $config.Tools.ExifTool
+            $captureDateResult = Resolve-VideoCaptureDate -Path $file.Path -ExifToolPath $config.Tools.ExifTool -DateConfig $config.Dates
             if ($videoInfo.IsHdr) {
                 $summary.Hdr++
             } else {
                 $summary.Sdr++
             }
 
+            Write-CaptureDateStatus -FileName $file.RelativePath -CaptureDateResult $captureDateResult
+
+            foreach ($captureWarning in @($captureDateResult.Warnings)) {
+                Write-VideoArchiveStatus -Message ("Warning: {0} | {1}" -f $file.RelativePath, $captureWarning) -Level Warn
+            }
+
             $outputExtension = Get-ArchiveOutputExtension -SourcePath $file.Path
             $relativeOutputPath = [System.IO.Path]::ChangeExtension($file.RelativePath, $outputExtension)
             $outputRoot = if ($videoInfo.IsHdr) { $outputRoots.HDR } else { $outputRoots.SDR }
             $finalOutputFile = Join-Path -Path $outputRoot -ChildPath $relativeOutputPath
+
+            if (-not $captureDateResult.Success -and [bool]$config.Dates.strictDateMode) {
+                $summary.Skipped++
+                $reason = 'Capture date could not be determined in strict date mode.'
+                Write-VideoArchiveStatus -Message ("[{0}/{1}] {2} -> Skip ({3})" -f ($index + 1), $files.Count, $file.RelativePath, $reason) -Level Warn
+                Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
+                    -SourcePath $file.Path `
+                    -OutputPath $finalOutputFile `
+                    -Action 'Skip' `
+                    -Reason $reason `
+                    -OutputGroup $(if ($videoInfo.IsHdr) { 'HDR' } else { 'SDR' }) `
+                    -Codec $videoInfo.Codec `
+                    -BitrateMbps $videoInfo.BitrateMbps `
+                    -IsHdr $videoInfo.IsHdr `
+                    -HdrType $videoInfo.HdrType `
+                    -SourceSizeMb $videoInfo.SourceSizeMb `
+                    -OutputSizeMb $null `
+                    -SavingsPercent $null `
+                    -ValidationPassed $false `
+                    -ValidationWarnings $null `
+                    -ValidationErrors $reason `
+                    -Duration $null `
+                    -DryRunFlag $false `
+                    -HdrTypeSource $videoInfo.HdrType `
+                    -HdrTypeOutput $null `
+                    -SourceWidth $videoInfo.Width `
+                    -SourceHeight $videoInfo.Height `
+                    -OutputWidth $null `
+                    -OutputHeight $null `
+                    -SourceTransfer $videoInfo.Transfer `
+                    -OutputTransfer $null `
+                    -SourcePrimaries $videoInfo.Primaries `
+                    -OutputPrimaries $null `
+                    -SourceBitDepth $videoInfo.BitDepth `
+                    -OutputBitDepth $null `
+                    -CaptureDate $null `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $false `
+                    -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $false)
+                $completedCount++
+                continue
+            }
 
             $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -Force:$Force -NoSmartSkip:$NoSmartSkip
             Write-VideoArchiveStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason)
@@ -294,7 +361,14 @@ try {
                     -SourcePrimaries $videoInfo.Primaries `
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
-                    -OutputBitDepth $null)
+                    -OutputBitDepth $null `
+                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $captureDateResult.Success `
+                    -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $captureDateResult.Success)
                 $completedCount++
                 continue
             }
@@ -330,7 +404,14 @@ try {
                     -SourcePrimaries $videoInfo.Primaries `
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
-                    -OutputBitDepth $null)
+                    -OutputBitDepth $null `
+                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $captureDateResult.Success `
+                    -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $captureDateResult.Success)
                 $completedCount++
                 continue
             }
@@ -370,7 +451,14 @@ try {
                     -SourcePrimaries $videoInfo.Primaries `
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
-                    -OutputBitDepth $null)
+                    -OutputBitDepth $null `
+                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $captureDateResult.Success `
+                    -CaptureDateWarnings ($captureDateResult.Warnings -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $false)
                 $completedCount++
                 continue
             }
@@ -382,10 +470,13 @@ try {
 
             Move-Item -LiteralPath $tempOutputFile -Destination $finalOutputFile -Force
             Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) | Out-Null
+            if ($captureDateResult.Success -and ($captureDateResult.Source -eq 'FileName' -or [bool]$config.Dates.setAllCommonDateTags)) {
+                Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
+            }
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
             $outputMetadata = Get-VideoMetadataSnapshot -Path $finalOutputFile -ExifToolPath $config.Tools.ExifTool
-            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode)
 
             if (-not $validation.Success) {
                 $summary.Failed++
@@ -418,7 +509,14 @@ try {
                     -SourcePrimaries $videoInfo.Primaries `
                     -OutputPrimaries $outputInfo.Primaries `
                     -SourceBitDepth $videoInfo.BitDepth `
-                    -OutputBitDepth $outputInfo.BitDepth)
+                    -OutputBitDepth $outputInfo.BitDepth `
+                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $captureDateResult.Success `
+                    -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $false)
                 $completedCount++
                 continue
             }
@@ -464,7 +562,14 @@ try {
                     -SourcePrimaries $videoInfo.Primaries `
                     -OutputPrimaries $outputInfo.Primaries `
                     -SourceBitDepth $videoInfo.BitDepth `
-                    -OutputBitDepth $outputInfo.BitDepth)
+                    -OutputBitDepth $outputInfo.BitDepth `
+                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDateSource $captureDateResult.Source `
+                    -CaptureDatePattern $captureDateResult.Pattern `
+                    -CaptureDateRecognized $captureDateResult.Success `
+                    -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
+                    -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                    -DateValidationSuccess $validation.Success)
                 $completedCount++
                 continue
             }
@@ -499,7 +604,14 @@ try {
                 -SourcePrimaries $videoInfo.Primaries `
                 -OutputPrimaries $outputInfo.Primaries `
                 -SourceBitDepth $videoInfo.BitDepth `
-                -OutputBitDepth $outputInfo.BitDepth)
+                -OutputBitDepth $outputInfo.BitDepth `
+                -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                -CaptureDateSource $captureDateResult.Source `
+                -CaptureDatePattern $captureDateResult.Pattern `
+                -CaptureDateRecognized $captureDateResult.Success `
+                -CaptureDateWarnings (($captureDateResult.Warnings + $validation.Warnings) -join '; ') `
+                -StrictDateMode ([bool]$config.Dates.strictDateMode) `
+                -DateValidationSuccess $validation.Success)
             $completedCount++
         } catch {
             $summary.Failed++

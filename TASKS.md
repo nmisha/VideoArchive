@@ -47,6 +47,16 @@
 - [x] Prevent Smart Skip from silently skipping low-bitrate proprietary HDR formats.
 - [x] Document HDR metadata behavior in `Docs/HDR.md`.
 
+## v1.3.1 - Capture Date Recovery [Done]
+
+- [x] Add `DateResolver.psm1`.
+- [x] Resolve capture dates from metadata first and file names second.
+- [x] Avoid filesystem timestamps as capture date fallbacks.
+- [x] Add `strictDateMode`.
+- [x] Restore output capture date tags when recovered from the file name.
+- [x] Log capture date source, pattern, warnings, and validation state.
+- [x] Validate recovered capture dates in output metadata.
+
 ## v1.4 - Resume
 
 - [ ] Resume from JSONL or SQLite.
