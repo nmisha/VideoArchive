@@ -148,6 +148,34 @@ exit 0
         $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2026-07-05T12:31:41'
     }
 
+    It 'accepts unqualified QuickTime date keys from ExifTool JSON' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-unqualified.ps1'
+        @'
+$json = @"
+[
+  {
+    "MediaCreateDate": "2026:07:05 10:00:00"
+  }
+]
+"@
+Write-Output $json
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+
+        $dateConfig = [pscustomobject]@{
+            defaultTimezoneOffset = '+00:00'
+        }
+
+        $videoPath = Join-Path $tempRoot 'VID_20260705_123141.mp4'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.Success | Should Be $true
+        $result.Source | Should Be 'Metadata'
+        $result.Pattern | Should Be 'MediaCreateDate'
+        $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2026-07-05T10:00:00'
+    }
+
     It 'returns warnings when neither metadata nor file name contain a valid date' {
         $toolPath = Join-Path $tempRoot 'fake-exiftool-empty.ps1'
         @'

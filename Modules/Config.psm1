@@ -73,8 +73,8 @@ function Import-VideoArchiveConfig {
             $config.dates
         } else {
             [pscustomobject]@{
-                timezoneMode = 'local'
-                defaultTimezoneOffset = '+03:00'
+                timezoneMode = 'none'
+                defaultTimezoneOffset = '+00:00'
                 preferFileNameOverFileSystemDates = $true
                 setAllCommonDateTags = $true
                 strictDateMode = $false

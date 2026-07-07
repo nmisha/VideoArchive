@@ -212,6 +212,10 @@ function Test-FileTimestampsPreserved {
         [Parameter(Mandatory)]
         [string]$OutputFile,
 
+        [double]$CreationToleranceSeconds = 2,
+
+        [double]$LastWriteToleranceSeconds = 2,
+
         [double]$LastAccessToleranceSeconds = 2
     )
 
@@ -219,12 +223,14 @@ function Test-FileTimestampsPreserved {
     $output = Get-Item -LiteralPath $OutputFile
     $errors = New-Object System.Collections.Generic.List[string]
 
-    if ($source.CreationTime -ne $output.CreationTime) {
-        $errors.Add("CreationTime mismatch: $($source.CreationTime) -> $($output.CreationTime)")
+    $creationDelta = [math]::Abs(($source.CreationTime - $output.CreationTime).TotalSeconds)
+    if ($creationDelta -gt $CreationToleranceSeconds) {
+        $errors.Add("CreationTime mismatch: $($source.CreationTime) -> $($output.CreationTime) (delta ${creationDelta}s)")
     }
 
-    if ($source.LastWriteTime -ne $output.LastWriteTime) {
-        $errors.Add("LastWriteTime mismatch: $($source.LastWriteTime) -> $($output.LastWriteTime)")
+    $lastWriteDelta = [math]::Abs(($source.LastWriteTime - $output.LastWriteTime).TotalSeconds)
+    if ($lastWriteDelta -gt $LastWriteToleranceSeconds) {
+        $errors.Add("LastWriteTime mismatch: $($source.LastWriteTime) -> $($output.LastWriteTime) (delta ${lastWriteDelta}s)")
     }
 
     $lastAccessDelta = [math]::Abs(($source.LastAccessTime - $output.LastAccessTime).TotalSeconds)

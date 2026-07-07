@@ -2,24 +2,6 @@ Set-StrictMode -Version Latest
 
 $script:NvEncOptionCache = @{}
 
-function ConvertTo-ProcessArgumentString {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string[]]$Arguments
-    )
-
-    $escaped = foreach ($argument in $Arguments) {
-        if ($argument -match '[\s"]') {
-            '"' + ($argument -replace '"', '\"') + '"'
-        } else {
-            $argument
-        }
-    }
-
-    return ($escaped -join ' ')
-}
-
 function ConvertFrom-NvEncProgressLine {
     [CmdletBinding()]
     param(
@@ -240,12 +222,12 @@ function New-EncodeJob {
         $args += '--aq-temporal'
     }
 
-    if ([bool]$Preset.adaptiveI) {
-        $args += '--adapt-i'
+    if (-not [bool]$Preset.adaptiveI -and (Test-NvEncOptionSupported -NvEncPath $NvEncPath -OptionName '--no-i-adapt')) {
+        $args += '--no-i-adapt'
     }
 
-    if ([bool]$Preset.adaptiveB) {
-        $args += '--adapt-b'
+    if (-not [bool]$Preset.adaptiveB -and (Test-NvEncOptionSupported -NvEncPath $NvEncPath -OptionName '--no-b-adapt')) {
+        $args += '--no-b-adapt'
     }
 
     if ([bool]$Preset.strictGop) {
@@ -312,7 +294,6 @@ function Invoke-EncodeJob {
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $arguments = @($Job.Arguments)
-    $argumentString = ConvertTo-ProcessArgumentString -Arguments $arguments
     $logBuilder = New-Object System.Text.StringBuilder
     $outputDirectory = Split-Path -Path $Job.OutputFile -Parent
     $stdoutPath = Join-Path -Path $outputDirectory -ChildPath ('nvenc_stdout_{0}.log' -f [guid]::NewGuid().ToString('N'))
@@ -323,7 +304,7 @@ function Invoke-EncodeJob {
 
     try {
         $process = Start-Process -FilePath $Job.NvEncPath `
-            -ArgumentList $argumentString `
+            -ArgumentList $arguments `
             -RedirectStandardOutput $stdoutPath `
             -RedirectStandardError $stderrPath `
             -NoNewWindow `
@@ -381,6 +362,7 @@ function Invoke-EncodeJob {
         }
     }
 
+    $hasLogError = $logBuilder.ToString() -match '(?m)^\s*Error:'
     $actualOutputFile = Resolve-EncodeOutputFile -ExpectedOutputFile $Job.OutputFile
     if ([string]::IsNullOrWhiteSpace($actualOutputFile)) {
         $directoryListing = if (Test-Path -LiteralPath $outputDirectory -PathType Container) {
@@ -389,11 +371,11 @@ function Invoke-EncodeJob {
             '<missing output directory>'
         }
 
-        throw ("NVEncC finished with exit code {0} but output file was not found. Expected='{1}'. Directory='{2}'. Files=[{3}]." -f $exitCode, $Job.OutputFile, $outputDirectory, $directoryListing)
+        throw ("NVEncC finished with exit code {0} but output file was not found. Expected='{1}'. Directory='{2}'. Files=[{3}]. NVEncC log: {4}" -f $exitCode, $Job.OutputFile, $outputDirectory, $directoryListing, $logBuilder.ToString().Trim())
     }
 
     [pscustomobject]@{
-        Success = ($exitCode -eq 0)
+        Success = (($exitCode -eq 0) -and (-not $hasLogError))
         ExitCode = $exitCode
         OutputFile = $actualOutputFile
         Duration = $stopwatch.Elapsed

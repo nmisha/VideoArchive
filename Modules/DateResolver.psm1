@@ -142,10 +142,15 @@ function Get-VideoDateFromMetadata {
 
     $candidates = @(
         @{ Name = 'QuickTime:MediaCreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:MediaCreateDate') }
+        @{ Name = 'MediaCreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'MediaCreateDate') }
         @{ Name = 'QuickTime:CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:CreateDate') }
+        @{ Name = 'CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'CreateDate') }
         @{ Name = 'QuickTime:TrackCreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:TrackCreateDate') }
+        @{ Name = 'TrackCreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'TrackCreateDate') }
         @{ Name = 'QuickTime:ModifyDate'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:ModifyDate') }
+        @{ Name = 'ModifyDate'; Value = (Get-ExifJsonValue -Object $item -Name 'ModifyDate') }
         @{ Name = 'EXIF:DateTimeOriginal'; Value = (Get-ExifJsonValue -Object $item -Name 'EXIF:DateTimeOriginal') }
+        @{ Name = 'DateTimeOriginal'; Value = (Get-ExifJsonValue -Object $item -Name 'DateTimeOriginal') }
         @{ Name = 'EXIF:CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'EXIF:CreateDate') }
         @{ Name = 'XMP:CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'XMP:CreateDate') }
         @{ Name = 'Keys:CreationDate'; Value = (Get-ExifJsonValue -Object $item -Name 'Keys:CreationDate') }
@@ -397,13 +402,6 @@ function Set-VideoCaptureDate {
 
     if ($LASTEXITCODE -ne 0) {
         throw "ExifTool capture date write failed for '$Path': $output"
-    }
-
-    if ($Source -eq 'FileName') {
-        $file = Get-Item -LiteralPath $Path
-        $file.CreationTime = $CaptureDate
-        $file.LastWriteTime = $CaptureDate
-        $file.LastAccessTime = $CaptureDate
     }
 
     return $output.Trim()

@@ -33,8 +33,6 @@ foreach ($module in $requiredModules) {
     Import-Module (Join-Path -Path $moduleRoot -ChildPath $module) -Force
 }
 
-$tempRoot = $null
-
 function New-VideoArchiveRecord {
     param(
         [string]$SourcePath,
@@ -137,14 +135,17 @@ function Get-OutputRoots {
 function Get-TempOutputPath {
     param(
         [Parameter(Mandatory)]
-        [string]$TempRoot,
+        [string]$FinalOutputPath,
 
         [Parameter(Mandatory)]
-        [string]$RelativePath
+        [string]$RunId
     )
 
-    $safeName = ($RelativePath -replace '[\\/:*?"<>|]', '_')
-    return Join-Path -Path $TempRoot -ChildPath $safeName
+    $directory = Split-Path -Path $FinalOutputPath -Parent
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FinalOutputPath)
+    $extension = [System.IO.Path]::GetExtension($FinalOutputPath)
+    $tempName = '{0}_va_tmp_{1}{2}' -f $baseName, $RunId, $extension
+    return Join-Path -Path $directory -ChildPath $tempName
 }
 
 function Remove-IfExists {
@@ -223,17 +224,6 @@ try {
 
     $files = @(Get-VideoFiles -InputPath $resolvedInputPath -Extensions $config.Extensions)
     $logger = Initialize-VideoArchiveLogger -LogRoot $config.Output.LogsFolder
-    $tempBase = [string]$config.Output.TempFolder
-    if (-not [System.IO.Path]::IsPathRooted($tempBase)) {
-        $tempBase = Join-Path -Path $projectRoot -ChildPath $tempBase
-    }
-
-    $tempRoot = Join-Path -Path $tempBase -ChildPath $logger.RunId
-
-    if (-not (Test-Path -LiteralPath $tempRoot -PathType Container)) {
-        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
-    }
-
     Show-VideoArchiveBanner -Config $config
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $($files.Count)"
@@ -430,7 +420,7 @@ try {
                 continue
             }
 
-            $tempOutputFile = Get-TempOutputPath -TempRoot $tempRoot -RelativePath $relativeOutputPath
+            $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
             $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -NvEncPath $config.Tools.NvEnc -Preset $config.Preset
             $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry }
             $tempOutputFile = $encodeResult.OutputFile
@@ -485,7 +475,7 @@ try {
 
             Move-Item -LiteralPath $tempOutputFile -Destination $finalOutputFile -Force
             Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) | Out-Null
-            if ($captureDateResult.Success -and ($captureDateResult.Source -eq 'FileName' -or [bool]$config.Dates.setAllCommonDateTags)) {
+            if ($captureDateResult.Success -and $captureDateResult.Source -eq 'FileName') {
                 Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
             }
 
@@ -667,11 +657,8 @@ try {
         }
     }
 
-    Complete-VideoArchiveProgress
     Write-LogMessage -Logger $logger -Message ("Run finished. Encoded={0} Skipped={1} Failed={2} DryRun={3}" -f $summary.Encoded, $summary.Skipped, $summary.Failed, $summary.DryRun)
     Show-VideoArchiveSummary -Summary $summary
 } finally {
-    if ($null -ne $tempRoot -and (Test-Path -LiteralPath $tempRoot -PathType Container)) {
-        Remove-Item -LiteralPath $tempRoot -Recurse -Force
-    }
+    Complete-VideoArchiveProgress
 }

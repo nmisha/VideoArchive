@@ -114,6 +114,26 @@ Describe 'Validator' {
         $timestampErrors.Count | Should Be 0
     }
 
+    It 'passes when CreationTime and LastWriteTime differ within tolerance' {
+        $sourceFile = Join-Path $tempRoot 'source_time_tolerant.mp4'
+        $outputFile = Join-Path $tempRoot 'output_time_tolerant.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceItem = Get-Item -LiteralPath $sourceFile
+        $outputItem = Get-Item -LiteralPath $outputFile
+        $sourceItem.CreationTime = [datetime]'2026-07-05T12:00:00'
+        $sourceItem.LastWriteTime = [datetime]'2026-07-05T12:01:00'
+        $sourceItem.LastAccessTime = [datetime]'2026-07-05T12:02:00'
+        $outputItem.CreationTime = $sourceItem.CreationTime.AddSeconds(1)
+        $outputItem.LastWriteTime = $sourceItem.LastWriteTime.AddSeconds(1)
+        $outputItem.LastAccessTime = $sourceItem.LastAccessTime
+
+        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+
+        $timestampErrors.Count | Should Be 0
+    }
+
     It 'passes when FPS delta is within tolerance' {
         $sourceFile = Join-Path $tempRoot 'source_fps_ok.mp4'
         $outputFile = Join-Path $tempRoot 'output_fps_ok.mp4'
@@ -252,6 +272,26 @@ Describe 'Validator' {
         $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
 
         ($timestampErrors -join ' | ') | Should Match 'LastAccessTime mismatch'
+    }
+
+    It 'fails when CreationTime exceeds tolerance' {
+        $sourceFile = Join-Path $tempRoot 'source_creation_bad.mp4'
+        $outputFile = Join-Path $tempRoot 'output_creation_bad.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceItem = Get-Item -LiteralPath $sourceFile
+        $outputItem = Get-Item -LiteralPath $outputFile
+        $sourceItem.CreationTime = [datetime]'2026-07-05T12:00:00'
+        $sourceItem.LastWriteTime = [datetime]'2026-07-05T12:01:00'
+        $sourceItem.LastAccessTime = [datetime]'2026-07-05T12:02:00'
+        $outputItem.CreationTime = $sourceItem.CreationTime.AddSeconds(5)
+        $outputItem.LastWriteTime = $sourceItem.LastWriteTime
+        $outputItem.LastAccessTime = $sourceItem.LastAccessTime
+
+        $timestampErrors = Test-FileTimestampsPreserved -SourceFile $sourceFile -OutputFile $outputFile
+
+        ($timestampErrors -join ' | ') | Should Match 'CreationTime mismatch'
     }
 
     It 'fails when FPS delta exceeds tolerance' {
