@@ -319,6 +319,43 @@ try {
         throw 'Input path is required.'
     }
 
+    $hardwareProfile = [pscustomobject]@{
+        Adapters = @()
+        HasNvidiaRtx = $false
+        DetectionAttempted = $false
+        DetectionEnabled = [bool]$config.Encoder.detectHardwareOnStartup
+    }
+    $shouldEvaluateEncoderPrompt = ($EncoderBackend -eq 'auto' -and $OutputCodec -eq 'auto') -and (
+        [bool]$config.Encoder.alwaysPromptEncoderChoice -or
+        [bool]$config.Encoder.alwaysPromptEncoderChoiceWithoutRtx
+    )
+    if ($shouldEvaluateEncoderPrompt) {
+        if ([bool]$config.Encoder.alwaysPromptEncoderChoice) {
+            $shouldPromptEncoderChoice = $true
+        } elseif ([bool]$config.Encoder.detectHardwareOnStartup) {
+            $hardwareProfile = Get-VideoArchiveHardwareProfile
+            Add-Member -InputObject $hardwareProfile -NotePropertyName DetectionAttempted -NotePropertyValue $true -Force
+            Add-Member -InputObject $hardwareProfile -NotePropertyName DetectionEnabled -NotePropertyValue $true -Force
+            $shouldPromptEncoderChoice = -not $hardwareProfile.HasNvidiaRtx
+        } else {
+            $shouldPromptEncoderChoice = $false
+        }
+
+        if ($shouldPromptEncoderChoice) {
+            $availableBackends = Get-AvailableEncoderBackends -Tools $config.Tools
+            $availableCodecs = @('hevc')
+            if (@($availableBackends | Where-Object { $_ -in @('nvenc', 'qsv') }).Count -gt 0) {
+                $availableCodecs += 'av1'
+            }
+
+            $encoderChoice = Select-VideoArchiveEncoderChoice -AvailableBackends $availableBackends -AvailableCodecs $availableCodecs -RecommendedBackend 'auto' -RecommendedCodec 'hevc'
+            $EncoderBackend = $encoderChoice.Backend
+            $OutputCodec = $encoderChoice.Codec
+            $script:VideoArchiveEncoderBackend = $EncoderBackend
+            $script:VideoArchiveOutputCodec = $OutputCodec
+        }
+    }
+
     $resolvedInputPath = [System.IO.Path]::GetFullPath($InputPath)
     $outputRoots = Get-OutputRoots -ResolvedInputPath $resolvedInputPath -Config $config
 
@@ -337,6 +374,16 @@ try {
     Write-VideoArchiveStatus -Message "Files : $($files.Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
     Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec"
+    if ($hardwareProfile.DetectionAttempted -and $hardwareProfile.HasNvidiaRtx) {
+        $rtxNames = @($hardwareProfile.Adapters | Where-Object { [string]$_.Name -match 'RTX' } | Select-Object -ExpandProperty Name)
+        if ($rtxNames.Count -gt 0) {
+            Write-VideoArchiveStatus -Message ("Hardware : NVIDIA RTX detected ({0})" -f ($rtxNames -join ', '))
+        }
+    } elseif ($hardwareProfile.DetectionAttempted) {
+        Write-VideoArchiveStatus -Message 'Hardware : NVIDIA RTX not detected' -Level Warn
+    } elseif (-not $hardwareProfile.DetectionEnabled -and [bool]$config.Encoder.alwaysPromptEncoderChoiceWithoutRtx) {
+        Write-VideoArchiveStatus -Message 'Hardware detection disabled: no RTX check at startup' -Level Warn
+    }
 
     if ($null -ne $resumePlan) {
         Write-VideoArchiveStatus -Message "Resume: $resumeLogPath"

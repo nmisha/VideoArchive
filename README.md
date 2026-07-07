@@ -22,6 +22,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Supports `-EncoderBackend auto|nvenc|qsv|amf|software`.
 - Supports `-OutputCodec auto|hevc|av1`.
+- Supports config-driven encoder choice prompts for `auto` mode.
 - Validates encoded files before accepting them.
 - Shows a text progress bar, dashboard counters, total ETA, per-file size results, and an expanded final summary.
 
@@ -153,6 +154,40 @@ Force software x265 fallback:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\PhoneVideo" -EncoderBackend software -OutputCodec hevc
+```
+
+## Encoder choice prompt
+
+When both `-EncoderBackend` and `-OutputCodec` stay at `auto`, VideoArchive can ask the operator to choose a backend and codec before the run starts.
+
+Config flags:
+
+- `encoder.detectHardwareOnStartup = true`
+  Enables NVIDIA RTX detection during startup.
+- `encoder.alwaysPromptEncoderChoiceWithoutRtx = true`
+  Prompts when no NVIDIA RTX adapter is detected.
+- `encoder.alwaysPromptEncoderChoice = true`
+  Always prompts, even when an RTX adapter is available.
+
+Priority:
+
+- if `alwaysPromptEncoderChoice=true`, prompt is always shown in `auto/auto` mode;
+- if `detectHardwareOnStartup=false`, RTX detection is skipped completely;
+- otherwise, if `alwaysPromptEncoderChoiceWithoutRtx=true`, prompt is shown only when RTX is not detected;
+- when `detectHardwareOnStartup=false`, `alwaysPromptEncoderChoiceWithoutRtx` has no effect;
+- if both flags are `false`, `auto` runs without an interactive encoder-choice prompt.
+
+Example config:
+
+```json
+"encoder": {
+  "defaultBackend": "auto",
+  "defaultCodec": "hevc",
+  "allowHdrAv1": false,
+  "detectHardwareOnStartup": true,
+  "alwaysPromptEncoderChoiceWithoutRtx": true,
+  "alwaysPromptEncoderChoice": false
+}
 ```
 
 ## Presets

@@ -11,6 +11,11 @@
 - Added backend auto-selection based on available tools and configured backend order.
 - Added basic multi-GPU support via configurable preferred device index for Rigaya backends.
 - Added safety policy that disables HDR AV1 by default and falls back to HEVC unless explicitly allowed.
+- Added hardware detection for NVIDIA RTX adapters to improve `auto` startup behavior.
+- Added `encoder.detectHardwareOnStartup` to disable startup GPU detection entirely when lower startup latency or deterministic non-interactive behavior is preferred.
+- Added config-driven startup prompt policy for encoder/backend choice in `auto` mode.
+- Added `encoder.alwaysPromptEncoderChoiceWithoutRtx` for prompting only on systems without RTX.
+- Added `encoder.alwaysPromptEncoderChoice` for always forcing an interactive encoder-choice prompt.
 - Updated validation so expected output codec can be `HEVC` or `AV1`.
 - Added encoder unit tests for codec resolution, backend auto-selection, NVENC AV1 jobs, and software fallback jobs.
 

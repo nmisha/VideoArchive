@@ -32,6 +32,7 @@ Loads and normalizes:
 Responsibilities:
 
 - resolve tool paths;
+- detect available GPU hardware capabilities for startup policy;
 - inject defaults for missing config keys;
 - expose one runtime config object.
 
@@ -169,6 +170,8 @@ Selection policy:
 - otherwise `auto` selects the first available backend from config order;
 - codec can be explicitly requested;
 - HDR AV1 is disabled by default and falls back to HEVC unless config allows it.
+- when startup prompt policy is enabled, `auto + auto` can be converted into an explicit user choice before the scan starts.
+- hardware detection itself can be disabled in config to keep startup deterministic and fast on problematic systems.
 
 ### `Metadata.psm1`
 
@@ -237,6 +240,7 @@ Handles console-only interaction:
 
 - banner;
 - preset menu;
+- optional encoder/backend choice menu for `auto` mode;
 - status lines;
 - plain-text progress bar;
 - dashboard counters for encoded, skipped, failed, dry-run, and resume-skipped files;

@@ -110,6 +110,80 @@ function Select-VideoArchivePreset {
     throw "Invalid preset selection: $selection"
 }
 
+function Select-VideoArchiveEncoderChoice {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string[]]$AvailableBackends,
+
+        [Parameter(Mandatory)]
+        [string[]]$AvailableCodecs,
+
+        [string]$RecommendedBackend = 'auto',
+
+        [string]$RecommendedCodec = 'hevc'
+    )
+
+    Complete-InlineTelemetry
+    Write-Host 'NVIDIA RTX GPU was not detected.' -ForegroundColor Yellow
+    Write-Host 'Select encoder backend and codec for this run.' -ForegroundColor Yellow
+    Write-Host ''
+
+    $backendChoices = @('auto') + @($AvailableBackends | Where-Object { $_ -ne 'auto' })
+    Write-Host 'Available encoder backends:' -ForegroundColor Cyan
+    for ($index = 0; $index -lt $backendChoices.Count; $index++) {
+        $backend = $backendChoices[$index]
+        $suffix = if ($backend -eq $RecommendedBackend) { ' [default]' } else { '' }
+        Write-Host ("{0}. {1}{2}" -f ($index + 1), $backend, $suffix)
+    }
+
+    Write-Host ''
+    $backendSelection = Read-Host ("Select backend (1-{0}) or press Enter for {1}" -f $backendChoices.Count, $RecommendedBackend)
+    $selectedBackend = $RecommendedBackend
+    if (-not [string]::IsNullOrWhiteSpace($backendSelection)) {
+        $parsedBackendIndex = 0
+        if ([int]::TryParse($backendSelection, [ref]$parsedBackendIndex) -and $parsedBackendIndex -ge 1 -and $parsedBackendIndex -le $backendChoices.Count) {
+            $selectedBackend = $backendChoices[$parsedBackendIndex - 1]
+        } elseif ($backendChoices -contains $backendSelection.Trim().ToLowerInvariant()) {
+            $selectedBackend = $backendSelection.Trim().ToLowerInvariant()
+        } else {
+            throw "Invalid encoder backend selection: $backendSelection"
+        }
+    }
+
+    $codecChoices = @($AvailableCodecs)
+    Write-Host ''
+    Write-Host 'Available output codecs:' -ForegroundColor Cyan
+    for ($index = 0; $index -lt $codecChoices.Count; $index++) {
+        $codec = $codecChoices[$index]
+        $suffix = if ($codec -eq $RecommendedCodec) { ' [default]' } else { '' }
+        Write-Host ("{0}. {1}{2}" -f ($index + 1), $codec.ToUpperInvariant(), $suffix)
+    }
+
+    if ($codecChoices -contains 'av1') {
+        Write-Host 'Note: HDR AV1 is disabled by default and falls back to HEVC unless enabled in config.' -ForegroundColor DarkYellow
+    }
+
+    Write-Host ''
+    $codecSelection = Read-Host ("Select codec (1-{0}) or press Enter for {1}" -f $codecChoices.Count, $RecommendedCodec.ToUpperInvariant())
+    $selectedCodec = $RecommendedCodec
+    if (-not [string]::IsNullOrWhiteSpace($codecSelection)) {
+        $parsedCodecIndex = 0
+        if ([int]::TryParse($codecSelection, [ref]$parsedCodecIndex) -and $parsedCodecIndex -ge 1 -and $parsedCodecIndex -le $codecChoices.Count) {
+            $selectedCodec = $codecChoices[$parsedCodecIndex - 1]
+        } elseif ($codecChoices -contains $codecSelection.Trim().ToLowerInvariant()) {
+            $selectedCodec = $codecSelection.Trim().ToLowerInvariant()
+        } else {
+            throw "Invalid output codec selection: $codecSelection"
+        }
+    }
+
+    [pscustomobject]@{
+        Backend = $selectedBackend
+        Codec = $selectedCodec
+    }
+}
+
 function Write-VideoArchiveStatus {
     [CmdletBinding()]
     param(
@@ -400,4 +474,4 @@ function Show-VideoArchiveSummary {
     }
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-DecisionStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus, Reset-EncodeTelemetryState
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Select-VideoArchiveEncoderChoice, Write-VideoArchiveStatus, Write-DecisionStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus, Reset-EncodeTelemetryState

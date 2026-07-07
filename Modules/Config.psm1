@@ -29,6 +29,76 @@ function Resolve-OptionalVideoArchivePath {
     return Resolve-VideoArchivePath -ProjectRoot $ProjectRoot -RelativePath $RelativePath
 }
 
+function Get-OptionalJsonPropertyValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$Object,
+
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+
+    return $property.Value
+}
+
+function Test-HasNvidiaRtxAdapter {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyCollection()]
+        [object[]]$Adapters
+    )
+
+    foreach ($adapter in @($Adapters)) {
+        $name = [string]$adapter.Name
+        $vendor = [string]$adapter.AdapterCompatibility
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            continue
+        }
+
+        $isNvidia = $vendor -match 'NVIDIA' -or $name -match 'NVIDIA'
+        $isRtx = $name -match '(^|\s)RTX(\s|$)|GeForce\s+RTX|Quadro\s+RTX|RTX\s+A\d|RTX\s+\d{3,4}'
+        if ($isNvidia -and $isRtx) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-VideoArchiveHardwareProfile {
+    [CmdletBinding()]
+    param(
+        [object[]]$Adapters
+    )
+
+    $resolvedAdapters = @()
+    if ($PSBoundParameters.ContainsKey('Adapters') -and $null -ne $Adapters) {
+        $resolvedAdapters = @($Adapters)
+    }
+
+    if ((@($resolvedAdapters)).Count -eq 0) {
+        try {
+            $resolvedAdapters = @(
+                Get-CimInstance Win32_VideoController -ErrorAction Stop |
+                    Select-Object Name, AdapterCompatibility, Status
+            )
+        } catch {
+            $resolvedAdapters = @()
+        }
+    }
+
+    [pscustomobject]@{
+        Adapters = @($resolvedAdapters)
+        HasNvidiaRtx = (Test-HasNvidiaRtxAdapter -Adapters @($resolvedAdapters))
+    }
+}
+
 function Read-VideoArchiveJson {
     [CmdletBinding()]
     param(
@@ -121,6 +191,15 @@ function Import-VideoArchiveConfig {
             if ($null -eq $config.encoder.PSObject.Properties['allowHdrAv1']) {
                 Add-Member -InputObject $config.encoder -NotePropertyName allowHdrAv1 -NotePropertyValue $false
             }
+            if ($null -eq $config.encoder.PSObject.Properties['detectHardwareOnStartup']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName detectHardwareOnStartup -NotePropertyValue $true
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['alwaysPromptEncoderChoiceWithoutRtx']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName alwaysPromptEncoderChoiceWithoutRtx -NotePropertyValue $true
+            }
+            if ($null -eq $config.encoder.PSObject.Properties['alwaysPromptEncoderChoice']) {
+                Add-Member -InputObject $config.encoder -NotePropertyName alwaysPromptEncoderChoice -NotePropertyValue $false
+            }
             if ($null -eq $config.encoder.PSObject.Properties['autoBackendOrder']) {
                 Add-Member -InputObject $config.encoder -NotePropertyName autoBackendOrder -NotePropertyValue @('nvenc', 'qsv', 'amf', 'software')
             }
@@ -133,15 +212,18 @@ function Import-VideoArchiveConfig {
                 defaultBackend = 'auto'
                 defaultCodec = 'hevc'
                 allowHdrAv1 = $false
+                detectHardwareOnStartup = $true
+                alwaysPromptEncoderChoiceWithoutRtx = $true
+                alwaysPromptEncoderChoice = $false
                 autoBackendOrder = @('nvenc', 'qsv', 'amf', 'software')
                 preferredGpu = 0
             }
         }
         Tools = [pscustomobject]@{
             NvEnc = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.nvenc
-            QsvEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.qsvenc
-            AmfEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.amfenc
-            Ffmpeg = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.ffmpeg
+            QsvEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath (Get-OptionalJsonPropertyValue -Object $config.tools -Name 'qsvenc')
+            AmfEnc = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath (Get-OptionalJsonPropertyValue -Object $config.tools -Name 'amfenc')
+            Ffmpeg = Resolve-OptionalVideoArchivePath -ProjectRoot $resolvedRoot -RelativePath (Get-OptionalJsonPropertyValue -Object $config.tools -Name 'ffmpeg')
             ExifTool = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.exiftool
             MediaInfo = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.tools.mediainfo
         }
@@ -210,4 +292,4 @@ function Test-VideoArchiveTools {
     return $true
 }
 
-Export-ModuleMember -Function Import-VideoArchiveConfig, Get-VideoArchivePresetCatalog, Test-VideoArchiveTools
+Export-ModuleMember -Function Import-VideoArchiveConfig, Get-VideoArchivePresetCatalog, Test-VideoArchiveTools, Get-VideoArchiveHardwareProfile, Test-HasNvidiaRtxAdapter

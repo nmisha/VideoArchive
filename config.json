@@ -35,6 +35,9 @@
                     "defaultBackend":  "auto",
                     "defaultCodec":  "hevc",
                     "allowHdrAv1":  false,
+                    "detectHardwareOnStartup":  true,
+                    "alwaysPromptEncoderChoiceWithoutRtx":  true,
+                    "alwaysPromptEncoderChoice":  false,
                     "autoBackendOrder":  [
                                              "nvenc",
                                              "qsv",
