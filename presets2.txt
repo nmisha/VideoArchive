@@ -1,0 +1,62 @@
+Коротко: для вашей цели лучше оставаться на Qvbr, а не переходить на обычный VBR.
+Почему:
+VBR хорошо работает, когда нужно уложиться в заданный битрейт.
+У вас цель другая: сделать файл меньше исходника, но без лишней потери качества.
+Для этого NVEncC --qvbr подходит лучше: он сам снижает битрейт на простых сценах и тратит больше на сложных.
+Сейчас у вас уже не VBR, а именно Qvbr:
+Archive: qvbr 19, p7, lookahead 32, 2pass-full
+Balanced: qvbr 19, p5, lookahead 16, 2pass-quarter
+Fast: qvbr 20, p4, no multipass
+Storage: qvbr 21, p5, lookahead 16, 2pass-quarter
+Что я вижу по пресетам:
+Archive и Balanced слишком близки. Разница в скорости/эффективности есть, но по размеру они будут похожи.
+Storage сейчас недостаточно агрессивный для профиля “максимально уменьшить размер”.
+Fast логично быстрый, но для экономии места он худший: без multipass и с более быстрым preset обычно получается менее эффективно.
+Что бы я улучшил:
+Оставить Qvbr, не переходить на обычный VBR.
+Развести HDR и SDR сильнее.
+HDR чувствительнее к бандингу, поэтому для HDR лучше более щадящие значения, чем для SDR.
+Сделать Storage реально “storage”, а не почти Balanced.
+Практичная схема:
+Archive: HDR 18, SDR 19
+Balanced: HDR 20, SDR 21
+Fast: HDR 21, SDR 22
+Storage: HDR 22, SDR 23
+И по остальным параметрам:
+Archive: p7, lookahead 32, 2pass-full
+Balanced: p5, lookahead 16, 2pass-quarter
+Fast: p4, lookahead 8, none
+Storage: лучше поднять до p6 или p7, lookahead 32, 2pass-full
+То есть я бы сделал Storage таким:
+"Storage": {
+  "description": "Maximum space saving",
+  "qvbrHdr": 22,
+  "qvbrSdr": 23,
+  "nvPreset": "p6",
+  "lookahead": 32,
+  "multipass": "2pass-full",
+  "aqStrength": 8
+}
+И Balanced таким:
+"Balanced": {
+  "description": "Recommended balance",
+  "qvbrHdr": 20,
+  "qvbrSdr": 21,
+  "nvPreset": "p5",
+  "lookahead": 16,
+  "multipass": "2pass-quarter",
+  "aqStrength": 8
+}
+Ещё важный момент:
+у вас --audio-copy, и это правильно по требованиям
+но если в исходниках очень жирный аудиопоток, он может заметно ограничивать итоговую экономию места
+то есть не все файлы удастся сильно ужать только видео-частью
+По Smart Skip тоже есть смысл подумать:
+deleteOutputIfSavingsBelowPercent = 3 я бы поднял до 5 или 7
+тогда вы не будете хранить перекодированные файлы, если выигрыш по размеру слишком мал
+Итог:
+Qvbr оставлять
+пресеты стоит сделать агрессивнее именно по qvbr
+Storage нужно замедлить и усилить, иначе он недостаточно отличается от Balanced
+HDR и SDR лучше разделить по значениям качества
+Если хотите, я могу сразу обновить [presets.json](X:\\Projects\\VideoArchive\\presets.json) под такую схему.
