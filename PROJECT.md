@@ -114,3 +114,13 @@ Current resume support:
 - JSONL-based resume is implemented;
 - completed files are not restarted when history, preset, fingerprint, and output existence still match;
 - SQLite-backed global history remains a later step.
+
+## Operator feedback
+
+Current CLI feedback includes:
+
+- color-coded action lines for encode, skip, fail, discard, and resume states;
+- text progress bar with processed file count and processed source size;
+- live per-file encoder telemetry from `NVEncC`;
+- estimated total remaining time based on current file remain time plus average completed-file duration;
+- final summary with aggregate size and throughput metrics.

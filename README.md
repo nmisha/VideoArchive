@@ -20,7 +20,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Validates encoded files before accepting them.
-- Shows text progress, total ETA, per-file size results, and an expanded final summary.
+- Shows a text progress bar, dashboard counters, total ETA, per-file size results, and an expanded final summary.
 
 ## Capture date behavior
 
@@ -146,3 +146,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPat
 - Audio stays in copy mode.
 - Validation happens after encode and metadata copy.
 - `HDR Vivid -> HLG` is treated as a warning when base HDR is preserved.
+- Live UI uses `NVEncC` telemetry for per-file ETA and combines it with average completed-file time for total ETA.

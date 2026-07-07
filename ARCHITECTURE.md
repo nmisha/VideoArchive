@@ -219,9 +219,11 @@ Handles console-only interaction:
 - banner;
 - preset menu;
 - status lines;
-- plain-text progress;
+- plain-text progress bar;
+- dashboard counters for encoded, skipped, failed, dry-run, and resume-skipped files;
 - live encoding telemetry;
-- final summary.
+- per-file result lines with source size, output size, savings, and duration;
+- final summary with elapsed time, aggregate sizes, savings, and throughput.
 
 ## Data contracts
 

@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 $script:InlineTelemetryActive = $false
+$script:CurrentEncodeRemain = $null
 
 function Format-UiDuration {
     param(
@@ -52,6 +53,10 @@ function Complete-InlineTelemetry {
         Write-Host ''
         $script:InlineTelemetryActive = $false
     }
+}
+
+function Reset-EncodeTelemetryState {
+    $script:CurrentEncodeRemain = $null
 }
 
 function Show-VideoArchiveBanner {
@@ -126,6 +131,31 @@ function Write-VideoArchiveStatus {
     Write-Host $Message -ForegroundColor $color
 }
 
+function Write-DecisionStatus {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message,
+
+        [ValidateSet('Encode', 'Encoded', 'Skip', 'Failed', 'DryRun', 'Discarded', 'Resume')]
+        [string]$Action = 'Encode'
+    )
+
+    $color = switch ($Action) {
+        'Encode' { 'Gray' }
+        'Encoded' { 'Green' }
+        'Skip' { 'Yellow' }
+        'DryRun' { 'Cyan' }
+        'Discarded' { 'DarkYellow' }
+        'Resume' { 'DarkCyan' }
+        'Failed' { 'Red' }
+        default { 'Gray' }
+    }
+
+    Complete-InlineTelemetry
+    Write-Host $Message -ForegroundColor $color
+}
+
 function Write-CaptureDateStatus {
     [CmdletBinding()]
     param(
@@ -170,8 +200,17 @@ function Update-VideoArchiveProgress {
         [datetime]$StartTime,
 
         [Nullable[double]]$ProcessedSourceMb,
+        [Nullable[double]]$TotalSourceMb,
 
-        [Nullable[double]]$TotalSourceMb
+        [int]$Encoded = 0,
+
+        [int]$Skipped = 0,
+
+        [int]$Failed = 0,
+
+        [int]$DryRun = 0,
+
+        [int]$ResumeSkipped = 0
     )
 
     $percent = if ($Total -gt 0) { [int](($Completed / $Total) * 100) } else { 0 }
@@ -179,6 +218,10 @@ function Update-VideoArchiveProgress {
     $elapsed = (Get-Date) - $StartTime
     $etaText = 'n/a'
     $avgText = 'n/a'
+    $countText = "E:$Encoded S:$Skipped F:$Failed D:$DryRun"
+    if ($ResumeSkipped -gt 0) {
+        $countText += " R:$ResumeSkipped"
+    }
 
     if ($Completed -gt 0 -and $Completed -lt $Total) {
         $avgSeconds = $elapsed.TotalSeconds / $Completed
@@ -195,7 +238,7 @@ function Update-VideoArchiveProgress {
     } else {
         ''
     }
-    Write-Host ("Progress: {0} {1}/{2} ({3}%) | ETA {4} | Avg/File {5}{6}" -f $progressBar, $Completed, $Total, $percent, $etaText, $avgText, $sizeText) -ForegroundColor DarkCyan
+    Write-Host ("Progress: {0} {1}/{2} ({3}%) | ETA {4} | Avg/File {5} | {6}{7}" -f $progressBar, $Completed, $Total, $percent, $etaText, $avgText, $countText, $sizeText) -ForegroundColor DarkCyan
     Write-Host ("Current : {0}" -f $CurrentFile) -ForegroundColor DarkGray
 }
 
@@ -220,7 +263,13 @@ function Write-FileResultStatus {
     $sizeText = "{0} -> {1}" -f (Format-UiSize -Megabytes $SourceSizeMb), (Format-UiSize -Megabytes $OutputSizeMb)
     $savingsText = if ($null -ne $SavingsPercent) { ('{0:N2}%' -f $SavingsPercent) } else { 'n/a' }
     $durationText = Format-UiDuration -Value $Duration
-    Write-VideoArchiveStatus -Message ("{0}: {1} | {2} | Saved {3} | Time {4}" -f $actionText, $FileName, $sizeText, $savingsText, $durationText) -Level Success
+    $uiAction = switch ($actionText) {
+        'Encoded' { 'Encoded' }
+        'Discarded' { 'Discarded' }
+        'Failed' { 'Failed' }
+        default { 'Encoded' }
+    }
+    Write-DecisionStatus -Message ("{0}: {1} | {2} | Saved {3} | Time {4}" -f $actionText, $FileName, $sizeText, $savingsText, $durationText) -Action $uiAction
 }
 
 function Complete-VideoArchiveProgress {
@@ -234,8 +283,33 @@ function Update-EncodeTelemetry {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [psobject]$Telemetry
+        [psobject]$Telemetry,
+
+        [int]$Completed = 0,
+
+        [int]$Total = 0,
+
+        [Nullable[datetime]]$StartTime,
+
+        [int]$Encoded = 0,
+
+        [int]$Skipped = 0,
+
+        [int]$Failed = 0,
+
+        [int]$DryRun = 0,
+
+        [int]$ResumeSkipped = 0
     )
+
+    $currentRemain = $null
+    if (-not [string]::IsNullOrWhiteSpace([string]$Telemetry.RemainText)) {
+        try {
+            $currentRemain = [TimeSpan]::Parse([string]$Telemetry.RemainText)
+            $script:CurrentEncodeRemain = $currentRemain
+        } catch {
+        }
+    }
 
     $parts = @()
     if ($null -ne $Telemetry.PercentText) {
@@ -254,11 +328,32 @@ function Update-EncodeTelemetry {
         $parts += "ETA $($Telemetry.RemainText)"
     }
 
+    $totalEtaText = 'n/a'
+    if ($null -ne $StartTime -and $Total -gt 0) {
+        $remainingAfterCurrent = [math]::Max(($Total - $Completed - 1), 0)
+        if ($Completed -gt 0 -and $null -ne $currentRemain) {
+            $elapsed = (Get-Date) - $StartTime.Value
+            $avgSeconds = $elapsed.TotalSeconds / $Completed
+            $totalEta = $currentRemain.Add([TimeSpan]::FromSeconds($avgSeconds * $remainingAfterCurrent))
+            $totalEtaText = Format-UiDuration -Value $totalEta
+        } elseif ($null -ne $currentRemain) {
+            $totalEtaText = Format-UiDuration -Value $currentRemain
+        }
+    }
+
+    if ($totalEtaText -ne 'n/a') {
+        $parts += "TotalETA $totalEtaText"
+    }
+
     if ($null -ne $Telemetry.ElapsedText) {
         $parts += "Elapsed $($Telemetry.ElapsedText)"
     }
 
-    $message = 'Encoding: ' + ($parts -join ' | ')
+    $countText = "E:$Encoded S:$Skipped F:$Failed D:$DryRun"
+    if ($ResumeSkipped -gt 0) {
+        $countText += " R:$ResumeSkipped"
+    }
+    $message = 'Encoding: ' + ($parts -join ' | ') + " | $countText"
     Write-Host -NoNewline ("`r{0}   " -f $message) -ForegroundColor DarkYellow
     $script:InlineTelemetryActive = $true
 }
@@ -305,4 +400,4 @@ function Show-VideoArchiveSummary {
     }
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-DecisionStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus, Reset-EncodeTelemetryState

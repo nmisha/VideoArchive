@@ -355,7 +355,7 @@ try {
         foreach ($resumeSkip in @($resumePlan.SkippedFiles)) {
             $summary.Skipped++
             $summary.ResumeSkipped++
-            Write-VideoArchiveStatus -Message ("[resume] {0} -> Skip ({1})" -f $resumeSkip.File.RelativePath, $resumeSkip.Reason)
+            Write-DecisionStatus -Message ("[resume] {0} -> Skip ({1})" -f $resumeSkip.File.RelativePath, $resumeSkip.Reason) -Action Resume
             Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                 -SourcePath $resumeSkip.File.Path `
                 -OutputPath $resumeSkip.OutputPath `
@@ -383,7 +383,8 @@ try {
 
     for ($index = 0; $index -lt $files.Count; $index++) {
         $file = $files[$index]
-        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart -ProcessedSourceMb ([math]::Round($processedSourceBytes / 1MB, 2)) -TotalSourceMb ([math]::Round($totalSourceBytes / 1MB, 2))
+        Reset-EncodeTelemetryState
+        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart -ProcessedSourceMb ([math]::Round($processedSourceBytes / 1MB, 2)) -TotalSourceMb ([math]::Round($totalSourceBytes / 1MB, 2)) -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped
 
         $tempOutputFile = $null
         $finalOutputFile = $null
@@ -418,7 +419,7 @@ try {
             if (-not $captureDateResult.Success -and [bool]$config.Dates.strictDateMode) {
                 $summary.Skipped++
                 $reason = 'Capture date could not be determined in strict date mode.'
-                Write-VideoArchiveStatus -Message ("[{0}/{1}] {2} -> Skip ({3})" -f ($index + 1), $files.Count, $file.RelativePath, $reason) -Level Warn
+                Write-DecisionStatus -Message ("[{0}/{1}] {2} -> Skip ({3})" -f ($index + 1), $files.Count, $file.RelativePath, $reason) -Action Skip
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `
@@ -462,7 +463,7 @@ try {
             }
 
             $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -Force:$Force -NoSmartSkip:$NoSmartSkip
-            Write-VideoArchiveStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason)
+            Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
 
             if ($decision.Action -eq 'Skip') {
                 $summary.Skipped++
@@ -554,7 +555,7 @@ try {
 
             $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
             $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -NvEncPath $config.Tools.NvEnc -Preset $config.Preset
-            $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry }
+            $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $files.Count -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
             $tempOutputFile = $encodeResult.OutputFile
 
             if (-not $encodeResult.Success) {

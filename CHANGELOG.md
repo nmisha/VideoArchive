@@ -4,7 +4,10 @@
 
 - Improved console progress visualization with a text progress bar and processed-size tracking.
 - Improved total ETA reporting with average time per completed file.
+- Added dashboard counters for encoded, skipped, failed, dry-run, and resume-skipped files.
 - Added per-file result lines showing source size, output size, savings, and encode time.
+- Added action-specific UI status colors for encode, skip, fail, discard, and resume states.
+- Added total ETA refinement using current `NVEncC` remain time plus average completed-file duration.
 - Expanded final summary with total elapsed time, total source size, total encoded output size, aggregate savings, average encoded savings, and throughput in files per minute.
 - Added explicit UI reporting for outputs discarded after low-savings Smart Skip cleanup.
 
