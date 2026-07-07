@@ -195,6 +195,9 @@ function Show-VideoArchiveSummary {
     Write-Host ("DryRun  : {0}" -f $Summary.DryRun)
     Write-Host ("HDR     : {0}" -f $Summary.Hdr)
     Write-Host ("SDR     : {0}" -f $Summary.Sdr)
+    Write-Host ("DateMeta: {0}" -f $Summary.CaptureDateMetadata)
+    Write-Host ("DateName: {0}" -f $Summary.CaptureDateFileName)
+    Write-Host ("DateMiss: {0}" -f $Summary.CaptureDateMissing)
 }
 
 Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Write-VideoArchiveStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary

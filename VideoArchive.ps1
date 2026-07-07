@@ -249,6 +249,9 @@ try {
         DryRun = 0
         Hdr = 0
         Sdr = 0
+        CaptureDateMetadata = 0
+        CaptureDateFileName = 0
+        CaptureDateMissing = 0
     }
 
     $runStart = Get-Date
@@ -269,6 +272,12 @@ try {
                 $summary.Hdr++
             } else {
                 $summary.Sdr++
+            }
+
+            switch ([string]$captureDateResult.Source) {
+                'Metadata' { $summary.CaptureDateMetadata++ }
+                'FileName' { $summary.CaptureDateFileName++ }
+                default { $summary.CaptureDateMissing++ }
             }
 
             Write-CaptureDateStatus -FileName $file.RelativePath -CaptureDateResult $captureDateResult

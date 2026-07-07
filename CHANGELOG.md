@@ -2,6 +2,9 @@
 
 ## 1.3.0
 
+- Expanded capture date filename parsing with `Imou_yyyyMMddHHmmssfff_prefix`, `Insta360_VID_yyyyMMdd_HHmmss_suffix`, explicit `VID_yyyyMMdd_HHmmss`, and final `Generic_yyyyMMddHHmmssfff` fallback.
+- Added invalid filename date warnings for matched-but-invalid patterns instead of silently treating them as unsupported.
+- Documented capture date recovery order and the rule that filesystem timestamps are never used as capture date fallback.
 - Added `DateResolver.psm1` for capture date extraction from metadata or file names.
 - Added capture date rules to `config.json`, including `strictDateMode`.
 - Added pre-encode capture date resolution and strict/non-strict handling in the main workflow.
