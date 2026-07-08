@@ -249,7 +249,13 @@ function Remove-IfExists {
     param([string]$Path)
 
     if (Test-Path -LiteralPath $Path) {
-        Remove-Item -LiteralPath $Path -Force
+        try {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+        } catch [System.IO.IOException] {
+            Write-VideoArchiveStatus -Message ("Warning: temporary file is locked and could not be removed yet: {0}" -f $Path) -Level Warn
+        } catch {
+            throw
+        }
     }
 }
 
@@ -371,12 +377,12 @@ try {
     $logger = Initialize-VideoArchiveLogger -LogRoot $config.Output.LogsFolder
     Show-VideoArchiveBanner -Config $config
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
-    Write-VideoArchiveStatus -Message "Files : $($files.Count)"
+    Write-VideoArchiveStatus -Message "Files : $(@($files).Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
     Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec"
     if ($hardwareProfile.DetectionAttempted -and $hardwareProfile.HasNvidiaRtx) {
         $rtxNames = @($hardwareProfile.Adapters | Where-Object { [string]$_.Name -match 'RTX' } | Select-Object -ExpandProperty Name)
-        if ($rtxNames.Count -gt 0) {
+        if (@($rtxNames).Count -gt 0) {
             Write-VideoArchiveStatus -Message ("Hardware : NVIDIA RTX detected ({0})" -f ($rtxNames -join ', '))
         }
     } elseif ($hardwareProfile.DetectionAttempted) {
@@ -388,12 +394,12 @@ try {
     if ($null -ne $resumePlan) {
         Write-VideoArchiveStatus -Message "Resume: $resumeLogPath"
         Write-VideoArchiveStatus -Message "Resume Mode: $ResumeMode"
-        Write-VideoArchiveStatus -Message "Resume Skipped: $($resumePlan.SkippedFiles.Count)"
+        Write-VideoArchiveStatus -Message "Resume Skipped: $(@($resumePlan.SkippedFiles).Count)"
     }
 
     Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec"
 
-    if ($files.Count -eq 0) {
+    if (@($files).Count -eq 0) {
         $message = if ($null -ne $resumePlan) { 'No files scheduled after resume filtering.' } else { 'No supported video files found.' }
         Write-VideoArchiveStatus -Message $message -Level Warn
         Write-LogMessage -Logger $logger -Message $message
@@ -449,10 +455,11 @@ try {
     $runStart = Get-Date
     $completedCount = 0
 
-    for ($index = 0; $index -lt $files.Count; $index++) {
+    $fileCount = @($files).Count
+    for ($index = 0; $index -lt $fileCount; $index++) {
         $file = $files[$index]
         Reset-EncodeTelemetryState
-        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $files.Count -CurrentFile $file.RelativePath -StartTime $runStart -ProcessedSourceMb ([math]::Round($processedSourceBytes / 1MB, 2)) -TotalSourceMb ([math]::Round($totalSourceBytes / 1MB, 2)) -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped
+        Update-VideoArchiveProgress -Current ($index + 1) -Completed $completedCount -Total $fileCount -CurrentFile $file.RelativePath -StartTime $runStart -ProcessedSourceMb ([math]::Round($processedSourceBytes / 1MB, 2)) -TotalSourceMb ([math]::Round($totalSourceBytes / 1MB, 2)) -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped
 
         $tempOutputFile = $null
         $finalOutputFile = $null
@@ -489,7 +496,7 @@ try {
             if (-not $captureDateResult.Success -and [bool]$config.Dates.strictDateMode) {
                 $summary.Skipped++
                 $reason = 'Capture date could not be determined in strict date mode.'
-                Write-DecisionStatus -Message ("[{0}/{1}] {2} -> Skip ({3})" -f ($index + 1), $files.Count, $file.RelativePath, $reason) -Action Skip
+                Write-DecisionStatus -Message ("[{0}/{1}] {2} -> Skip ({3})" -f ($index + 1), $fileCount, $file.RelativePath, $reason) -Action Skip
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `
@@ -535,7 +542,7 @@ try {
             }
 
             $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip
-            Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $files.Count, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
+            Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $fileCount, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
 
             if ($decision.Action -eq 'Skip') {
                 $summary.Skipped++
@@ -631,7 +638,7 @@ try {
 
             $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
             $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec
-            $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $files.Count -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
+            $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $fileCount -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
             $tempOutputFile = $encodeResult.OutputFile
 
             if (-not $encodeResult.Success) {
@@ -697,6 +704,7 @@ try {
 
             if (-not $validation.Success) {
                 $summary.Failed++
+                Write-VideoArchiveStatus -Message ("Validation failed: {0}" -f ($validation.Errors -join '; ')) -Level Error
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
                     -SourcePath $file.Path `
                     -OutputPath $finalOutputFile `

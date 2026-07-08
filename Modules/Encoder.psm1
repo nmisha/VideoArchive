@@ -137,16 +137,17 @@ function Read-AppendedLines {
     }
 
     $lines = @(Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue)
-    if ($lines.Count -le $StartIndex) {
+    $lineCount = @($lines).Count
+    if ($lineCount -le $StartIndex) {
         return [pscustomobject]@{
             Lines = @()
-            NextIndex = $lines.Count
+            NextIndex = $lineCount
         }
     }
 
     return [pscustomobject]@{
-        Lines = @($lines[$StartIndex..($lines.Count - 1)])
-        NextIndex = $lines.Count
+        Lines = @($lines[$StartIndex..($lineCount - 1)])
+        NextIndex = $lineCount
     }
 }
 
@@ -224,7 +225,7 @@ function Resolve-EncodeOutputFile {
         }
     )
 
-    if ($exactBaseNameCandidates.Count -eq 1) {
+    if (@($exactBaseNameCandidates).Count -eq 1) {
         return $exactBaseNameCandidates[0].FullName
     }
 
@@ -232,7 +233,7 @@ function Resolve-EncodeOutputFile {
         $candidates | Where-Object { $_.Extension -ieq $expectedExtension }
     )
 
-    if ($sameExtensionCandidates.Count -eq 1) {
+    if (@($sameExtensionCandidates).Count -eq 1) {
         return $sameExtensionCandidates[0].FullName
     }
 
@@ -308,7 +309,7 @@ function Resolve-EncoderBackend {
     )
 
     $available = Get-AvailableEncoderBackends -Tools $Tools
-    if ($available.Count -eq 0) {
+    if (@($available).Count -eq 0) {
         throw 'No available encoder backend was found.'
     }
 

@@ -220,6 +220,54 @@ Describe 'Validator' {
         $result.Success | Should Be $true
     }
 
+    It 'passes with warnings when SDR BT.709 output tags are missing' {
+        $sourceFile = Join-Path $tempRoot 'source_sdr_tags_missing.mp4'
+        $outputFile = Join-Path $tempRoot 'output_sdr_tags_missing.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 3840
+            Height = 2160
+            Fps = 30
+            Rotation = 0
+            IsHdr = $false
+            HdrType = 'SDR'
+            BitDepth = 8
+            Transfer = 'BT.709'
+            Primaries = 'BT.709'
+            Matrix = 'BT.709'
+            Codec = 'AVC'
+            AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $outputInfo = [pscustomobject]@{
+            Width = 3840
+            Height = 2160
+            Fps = 30
+            Rotation = 0
+            IsHdr = $false
+            HdrType = 'SDR'
+            BitDepth = 8
+            Transfer = ''
+            Primaries = ''
+            Matrix = ''
+            Codec = 'HEVC'
+            AudioTrackCount = 1
+            AudioCodec = 'AAC'
+            AudioChannels = 2
+            AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile
+
+        $result.Success | Should Be $true
+        ($result.Warnings -join ' | ') | Should Match 'assumed'
+    }
+
     It 'fails when HDR metadata or timestamps are not preserved' {
         $sourceFile = Join-Path $tempRoot 'source_bad.mp4'
         $outputFile = Join-Path $tempRoot 'output_bad.mp4'

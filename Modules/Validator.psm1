@@ -40,6 +40,31 @@ function Test-StringEquivalentNormalized {
         $normalizedExpected.Contains($normalizedActual)
 }
 
+function Resolve-ComparableColorValue {
+    [CmdletBinding()]
+    param(
+        [string]$Actual,
+        [string]$Expected,
+        [bool]$IsHdr
+    )
+
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $resolvedActual = $Actual
+
+    if (-not $IsHdr -and [string]::IsNullOrWhiteSpace($Actual) -and -not [string]::IsNullOrWhiteSpace($Expected)) {
+        $normalizedExpected = ($Expected -replace '\s+', '').ToLowerInvariant()
+        if ($normalizedExpected -eq 'bt.709' -or $normalizedExpected -eq 'bt709') {
+            $resolvedActual = $Expected
+            $warnings.Add("Output color tag missing; assumed '$Expected' for SDR compatibility")
+        }
+    }
+
+    [pscustomobject]@{
+        Actual = $resolvedActual
+        Warnings = @($warnings)
+    }
+}
+
 function ConvertTo-TimezoneAdjustedDate {
     param(
         [Parameter(Mandatory)]
@@ -353,19 +378,34 @@ function Test-EncodedVideo {
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Transfer) -and -not $SourceInfo.IsHdr) {
-        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer)) {
+        $transferComparison = Resolve-ComparableColorValue -Actual $OutputInfo.Transfer -Expected $SourceInfo.Transfer -IsHdr:$SourceInfo.IsHdr
+        foreach ($warning in @($transferComparison.Warnings)) {
+            $warnings.Add($warning)
+        }
+
+        if (-not (Test-StringEquivalentNormalized -Actual $transferComparison.Actual -Expected $SourceInfo.Transfer)) {
             $errors.Add("Transfer mismatch: '$($SourceInfo.Transfer)' -> '$($OutputInfo.Transfer)'")
         }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Primaries) -and -not $SourceInfo.IsHdr) {
-        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries)) {
+        $primariesComparison = Resolve-ComparableColorValue -Actual $OutputInfo.Primaries -Expected $SourceInfo.Primaries -IsHdr:$SourceInfo.IsHdr
+        foreach ($warning in @($primariesComparison.Warnings)) {
+            $warnings.Add($warning)
+        }
+
+        if (-not (Test-StringEquivalentNormalized -Actual $primariesComparison.Actual -Expected $SourceInfo.Primaries)) {
             $errors.Add("Primaries mismatch: '$($SourceInfo.Primaries)' -> '$($OutputInfo.Primaries)'")
         }
     }
 
     if (-not [string]::IsNullOrWhiteSpace($SourceInfo.Matrix)) {
-        if (-not (Test-StringEquivalentNormalized -Actual $OutputInfo.Matrix -Expected $SourceInfo.Matrix)) {
+        $matrixComparison = Resolve-ComparableColorValue -Actual $OutputInfo.Matrix -Expected $SourceInfo.Matrix -IsHdr:$SourceInfo.IsHdr
+        foreach ($warning in @($matrixComparison.Warnings)) {
+            $warnings.Add($warning)
+        }
+
+        if (-not (Test-StringEquivalentNormalized -Actual $matrixComparison.Actual -Expected $SourceInfo.Matrix)) {
             $errors.Add("Matrix mismatch: '$($SourceInfo.Matrix)' -> '$($OutputInfo.Matrix)'")
         }
     }

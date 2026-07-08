@@ -5,34 +5,55 @@ $script:CurrentEncodeRemain = $null
 
 function Format-UiDuration {
     param(
-        [Nullable[TimeSpan]]$Value
+        $Value
     )
 
     if ($null -eq $Value) {
         return 'n/a'
     }
 
-    if ($Value.Value.TotalHours -ge 1) {
-        return $Value.Value.ToString('hh\:mm\:ss')
+    $duration = if ($Value -is [TimeSpan]) {
+        [TimeSpan]$Value
+    } elseif ($Value -is [System.Nullable[TimeSpan]]) {
+        if (-not $Value.HasValue) {
+            return 'n/a'
+        }
+        $Value.Value
+    } else {
+        try {
+            [TimeSpan]$Value
+        } catch {
+            return 'n/a'
+        }
     }
 
-    return $Value.Value.ToString('mm\:ss')
+    if ($duration.TotalHours -ge 1) {
+        return $duration.ToString('hh\:mm\:ss')
+    }
+
+    return $duration.ToString('mm\:ss')
 }
 
 function Format-UiSize {
     param(
-        [Nullable[double]]$Megabytes
+        $Megabytes
     )
 
     if ($null -eq $Megabytes) {
         return 'n/a'
     }
 
-    if ($Megabytes -ge 1024) {
-        return ('{0:N2} GB' -f ($Megabytes / 1024))
+    $sizeMb = try {
+        [double]$Megabytes
+    } catch {
+        return 'n/a'
     }
 
-    return ('{0:N2} MB' -f $Megabytes)
+    if ($sizeMb -ge 1024) {
+        return ('{0:N2} GB' -f ($sizeMb / 1024))
+    }
+
+    return ('{0:N2} MB' -f $sizeMb)
 }
 
 function New-UiProgressBar {
@@ -82,21 +103,22 @@ function Select-VideoArchivePreset {
 
     Complete-InlineTelemetry
     Write-Host 'Available presets:' -ForegroundColor Cyan
-    for ($index = 0; $index -lt $PresetCatalog.Presets.Count; $index++) {
+    $presetCount = @($PresetCatalog.Presets).Count
+    for ($index = 0; $index -lt $presetCount; $index++) {
         $preset = $PresetCatalog.Presets[$index]
         $suffix = if ($preset.IsDefault) { ' [default]' } else { '' }
         Write-Host ("{0}. {1} - {2}{3}" -f ($index + 1), $preset.Name, $preset.Description, $suffix)
     }
 
     Write-Host ''
-    $selection = Read-Host ("Select preset (1-{0}) or press Enter for {1}" -f $PresetCatalog.Presets.Count, $PresetCatalog.DefaultPreset)
+    $selection = Read-Host ("Select preset (1-{0}) or press Enter for {1}" -f $presetCount, $PresetCatalog.DefaultPreset)
     if ([string]::IsNullOrWhiteSpace($selection)) {
         return $PresetCatalog.DefaultPreset
     }
 
     $parsedIndex = 0
     if ([int]::TryParse($selection, [ref]$parsedIndex)) {
-        if ($parsedIndex -ge 1 -and $parsedIndex -le $PresetCatalog.Presets.Count) {
+        if ($parsedIndex -ge 1 -and $parsedIndex -le $presetCount) {
             return $PresetCatalog.Presets[$parsedIndex - 1].Name
         }
     }
@@ -131,18 +153,19 @@ function Select-VideoArchiveEncoderChoice {
 
     $backendChoices = @('auto') + @($AvailableBackends | Where-Object { $_ -ne 'auto' })
     Write-Host 'Available encoder backends:' -ForegroundColor Cyan
-    for ($index = 0; $index -lt $backendChoices.Count; $index++) {
+    $backendChoiceCount = @($backendChoices).Count
+    for ($index = 0; $index -lt $backendChoiceCount; $index++) {
         $backend = $backendChoices[$index]
         $suffix = if ($backend -eq $RecommendedBackend) { ' [default]' } else { '' }
         Write-Host ("{0}. {1}{2}" -f ($index + 1), $backend, $suffix)
     }
 
     Write-Host ''
-    $backendSelection = Read-Host ("Select backend (1-{0}) or press Enter for {1}" -f $backendChoices.Count, $RecommendedBackend)
+    $backendSelection = Read-Host ("Select backend (1-{0}) or press Enter for {1}" -f $backendChoiceCount, $RecommendedBackend)
     $selectedBackend = $RecommendedBackend
     if (-not [string]::IsNullOrWhiteSpace($backendSelection)) {
         $parsedBackendIndex = 0
-        if ([int]::TryParse($backendSelection, [ref]$parsedBackendIndex) -and $parsedBackendIndex -ge 1 -and $parsedBackendIndex -le $backendChoices.Count) {
+        if ([int]::TryParse($backendSelection, [ref]$parsedBackendIndex) -and $parsedBackendIndex -ge 1 -and $parsedBackendIndex -le $backendChoiceCount) {
             $selectedBackend = $backendChoices[$parsedBackendIndex - 1]
         } elseif ($backendChoices -contains $backendSelection.Trim().ToLowerInvariant()) {
             $selectedBackend = $backendSelection.Trim().ToLowerInvariant()
@@ -154,7 +177,8 @@ function Select-VideoArchiveEncoderChoice {
     $codecChoices = @($AvailableCodecs)
     Write-Host ''
     Write-Host 'Available output codecs:' -ForegroundColor Cyan
-    for ($index = 0; $index -lt $codecChoices.Count; $index++) {
+    $codecChoiceCount = @($codecChoices).Count
+    for ($index = 0; $index -lt $codecChoiceCount; $index++) {
         $codec = $codecChoices[$index]
         $suffix = if ($codec -eq $RecommendedCodec) { ' [default]' } else { '' }
         Write-Host ("{0}. {1}{2}" -f ($index + 1), $codec.ToUpperInvariant(), $suffix)
@@ -165,11 +189,11 @@ function Select-VideoArchiveEncoderChoice {
     }
 
     Write-Host ''
-    $codecSelection = Read-Host ("Select codec (1-{0}) or press Enter for {1}" -f $codecChoices.Count, $RecommendedCodec.ToUpperInvariant())
+    $codecSelection = Read-Host ("Select codec (1-{0}) or press Enter for {1}" -f $codecChoiceCount, $RecommendedCodec.ToUpperInvariant())
     $selectedCodec = $RecommendedCodec
     if (-not [string]::IsNullOrWhiteSpace($codecSelection)) {
         $parsedCodecIndex = 0
-        if ([int]::TryParse($codecSelection, [ref]$parsedCodecIndex) -and $parsedCodecIndex -ge 1 -and $parsedCodecIndex -le $codecChoices.Count) {
+        if ([int]::TryParse($codecSelection, [ref]$parsedCodecIndex) -and $parsedCodecIndex -ge 1 -and $parsedCodecIndex -le $codecChoiceCount) {
             $selectedCodec = $codecChoices[$parsedCodecIndex - 1]
         } elseif ($codecChoices -contains $codecSelection.Trim().ToLowerInvariant()) {
             $selectedCodec = $codecSelection.Trim().ToLowerInvariant()
@@ -405,12 +429,28 @@ function Update-EncodeTelemetry {
     $totalEtaText = 'n/a'
     if ($null -ne $StartTime -and $Total -gt 0) {
         $remainingAfterCurrent = [math]::Max(($Total - $Completed - 1), 0)
+        $resolvedStartTime = if ($StartTime -is [datetime]) {
+            [datetime]$StartTime
+        } elseif ($StartTime -is [System.Nullable[datetime]]) {
+            if (-not $StartTime.HasValue) {
+                $null
+            } else {
+                $StartTime.Value
+            }
+        } else {
+            try {
+                [datetime]$StartTime
+            } catch {
+                $null
+            }
+        }
+
         if ($Completed -gt 0 -and $null -ne $currentRemain) {
-            $elapsed = (Get-Date) - $StartTime.Value
+            $elapsed = (Get-Date) - $resolvedStartTime
             $avgSeconds = $elapsed.TotalSeconds / $Completed
             $totalEta = $currentRemain.Add([TimeSpan]::FromSeconds($avgSeconds * $remainingAfterCurrent))
             $totalEtaText = Format-UiDuration -Value $totalEta
-        } elseif ($null -ne $currentRemain) {
+        } elseif ($null -ne $currentRemain -and $null -ne $resolvedStartTime) {
             $totalEtaText = Format-UiDuration -Value $currentRemain
         }
     }
