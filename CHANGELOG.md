@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0
+
+- Added `VideoArchive.GUI.ps1` as a WPF desktop launcher.
+- Added `VideoArchive.GUI.cmd` as a GUI entry point for Windows PowerShell.
+- Added `Gui.psm1` for GUI queue items, preset persistence, history discovery, log tailing, and progress snapshot parsing.
+- Added drag-and-drop queue input for files and folders.
+- Added explicit GUI controls for preset, backend, codec, resume mode, and run flags.
+- Added sequential desktop job queue processing on top of the existing CLI workflow.
+- Added a live progress dashboard that reads captured CLI output from background runs.
+- Added a preset editor backed directly by `presets.json`.
+- Added a log/history browser for TXT, CSV, and JSONL files in `Logs`.
+- Added GUI helper unit tests for queue item creation, CLI argument building, log path detection, progress parsing, and preset persistence.
+
 ## 2.0.0
 
 - Reworked `Encoder.psm1` into a backend-aware encoder abstraction.

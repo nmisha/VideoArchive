@@ -3,8 +3,9 @@
 ## Pipeline
 
 ```text
-Console UI
+Console UI / WPF GUI
   -> Config
+  -> Gui
   -> Scanner
   -> Resume
   -> MediaAnalyzer
@@ -247,6 +248,21 @@ Handles console-only interaction:
 - live encoding telemetry;
 - per-file result lines with source size, output size, savings, and duration;
 - final summary with elapsed time, aggregate sizes, savings, and throughput.
+
+### `Gui.psm1`
+
+Supports the desktop launcher.
+
+Responsibilities:
+
+- create queue item records for GUI jobs;
+- persist and reload preset definitions from `presets.json`;
+- build explicit CLI argument lists for background runs;
+- enumerate log history files;
+- tail transcript/log content for the desktop dashboard;
+- parse queue progress snapshots from captured CLI output.
+
+The desktop GUI does not duplicate encoding logic. It orchestrates background runs of `VideoArchive.ps1` and reads their captured output.
 
 ## Data contracts
 

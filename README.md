@@ -23,6 +23,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Supports `-EncoderBackend auto|nvenc|qsv|amf|software`.
 - Supports `-OutputCodec auto|hevc|av1`.
 - Supports config-driven encoder choice prompts for `auto` mode.
+- Includes a desktop WPF GUI with queue management, preset editing, and log history browsing.
 - Validates encoded files before accepting them.
 - Shows a text progress bar, dashboard counters, total ETA, per-file size results, and an expanded final summary.
 
@@ -70,6 +71,8 @@ This is done to avoid double-adjusting file names that already contain local tim
 VideoArchive/
 |-- VideoArchive.ps1
 |-- VideoArchive.cmd
+|-- VideoArchive.GUI.ps1
+|-- VideoArchive.GUI.cmd
 |-- config.json
 |-- presets.json
 |-- smartskip.json
@@ -106,6 +109,12 @@ Interactive:
 
 ```powershell
 .\VideoArchive.cmd
+```
+
+Desktop GUI:
+
+```powershell
+.\VideoArchive.GUI.cmd
 ```
 
 Direct PowerShell:
@@ -196,6 +205,22 @@ Example config:
 - `Balanced` - Recommended balance
 - `Fast` - Fast encode
 - `Storage` - Maximum compression
+
+## Desktop GUI
+
+The WPF desktop launcher includes:
+
+- drag-and-drop queue input for files and folders;
+- explicit preset/backend/codec selection per queued job;
+- sequential job queue processing;
+- live dashboard based on captured CLI output;
+- preset editor backed by `presets.json`;
+- log/history browser for TXT, CSV, and JSONL files in `Logs`.
+
+GUI design rule:
+
+- the GUI launches `VideoArchive.ps1` in the background instead of reimplementing the archive pipeline;
+- this keeps CLI and GUI behavior aligned on analysis, encode, metadata, validation, and logging rules.
 
 ## Notes
 

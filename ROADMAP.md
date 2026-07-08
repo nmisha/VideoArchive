@@ -75,13 +75,13 @@ Goal: support more hardware backends.
 - Software x265 fallback [Done]
 - Multi-GPU support [Done]
 
-## v3.0 - GUI
+## v3.0 - GUI [Done]
 
 Goal: operator-friendly desktop workflow.
 
-- WPF or WinUI UI.
-- Drag and drop.
-- Preset editor.
-- Job queue.
-- Progress dashboard.
-- Log viewer and history browser.
+- WPF UI [Done]
+- Drag and drop [Done]
+- Preset editor [Done]
+- Job queue [Done]
+- Progress dashboard [Done]
+- Log viewer and history browser [Done]
