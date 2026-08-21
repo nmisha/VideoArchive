@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path -Path $PSScriptRoot -ChildPath 'Utils.psm1') -Force
+
 function Get-ExifJsonValue {
     param(
         [psobject]$Object,
@@ -152,6 +154,8 @@ function Get-VideoDateFromMetadata {
         '-QuickTime:CreateDate'
         '-QuickTime:TrackCreateDate'
         '-QuickTime:ModifyDate'
+        '-DateTimeOriginal'
+        '-CreateDate'
         '-EXIF:DateTimeOriginal'
         '-EXIF:CreateDate'
         '-XMP:CreateDate'
@@ -159,17 +163,10 @@ function Get-VideoDateFromMetadata {
         $Path
     )
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "ExifTool metadata read failed for '$Path': $output"
-    }
+    $output = Invoke-VideoArchiveJsonTool `
+        -ExecutablePath $ExifToolPath `
+        -Arguments $args `
+        -Operation "ExifTool metadata read for '$Path'"
 
     $parsed = $output | ConvertFrom-Json
     $item = if ($parsed -is [System.Array]) { $parsed[0] } else { $parsed }

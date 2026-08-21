@@ -1,5 +1,7 @@
 ﻿Set-StrictMode -Version Latest
 
+Import-Module (Join-Path -Path $PSScriptRoot -ChildPath 'Utils.psm1') -Force
+
 function Get-ExifToolValue {
     param(
         [Parameter(Mandatory)]
@@ -262,17 +264,10 @@ function Get-VideoMetadataSnapshot {
         $Path
     )
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "ExifTool metadata read failed for '$Path': $output"
-    }
+    $output = Invoke-VideoArchiveJsonTool `
+        -ExecutablePath $ExifToolPath `
+        -Arguments $args `
+        -Operation "ExifTool metadata read for '$Path'"
 
     return ConvertFrom-ExifToolJson -ExifToolJson $output -Path $Path
 }

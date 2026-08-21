@@ -8,6 +8,7 @@ Describe 'Encoder' {
         $nvencPath = Join-Path $tempRoot 'nvenc.cmd'
         $qsvPath = Join-Path $tempRoot 'qsv.cmd'
         $ffmpegPath = Join-Path $tempRoot 'ffmpeg.cmd'
+        $argumentEchoPath = Join-Path $tempRoot 'argument-echo.cmd'
 
         @'
 @echo --no-i-adapt --no-b-adapt --device --weightp --aud --repeat-headers
@@ -20,6 +21,22 @@ Describe 'Encoder' {
         @'
 @echo ffmpeg help
 '@ | Set-Content -LiteralPath $ffmpegPath -Encoding ascii
+
+        @'
+@echo off
+set "input="
+set "output="
+:loop
+if "%~1"=="" goto done
+if /i "%~1"=="-i" set "input=%~2"
+if /i "%~1"=="-o" set "output=%~2"
+shift
+goto loop
+:done
+echo INPUT=%input%
+type nul > "%output%"
+exit /b 0
+'@ | Set-Content -LiteralPath $argumentEchoPath -Encoding ascii
 
         $tools = [pscustomobject]@{
             NvEnc = $nvencPath
@@ -106,5 +123,42 @@ Describe 'Encoder' {
         $job.Codec | Should Be 'hevc'
         ($job.Arguments -join ' ') | Should Match 'libx265'
         ($job.Arguments -join ' ') | Should Match 'crf=20'
+    }
+
+    It 'quotes Windows command line paths containing spaces' {
+        $encoderModule = Get-Module Encoder
+        $commandLine = & $encoderModule {
+            ConvertTo-WindowsCommandLine -Arguments @(
+                '--avsw',
+                '-i',
+                'D:\Video archive\City day\00000.MTS',
+                '-o',
+                'D:\Video archive\Encoded files\00000.mkv'
+            )
+        }
+
+        $commandLine | Should Be '--avsw -i "D:\Video archive\City day\00000.MTS" -o "D:\Video archive\Encoded files\00000.mkv"'
+    }
+
+    It 'passes paths containing spaces as single native process arguments' {
+        $outputFile = Join-Path $tempRoot 'Encoded files\result.mkv'
+        $inputFile = 'D:\Video archive\City day\00000.MTS'
+        $job = [pscustomobject]@{
+            InputFile = $inputFile
+            OutputFile = $outputFile
+            ExecutablePath = $argumentEchoPath
+            Arguments = @('-i', $inputFile, '-o', $outputFile)
+            Backend = 'test'
+            Codec = 'hevc'
+            TelemetryFormat = 'rigaya'
+            EncoderLabel = 'argument-echo.cmd'
+            SourceDurationSeconds = 1
+        }
+
+        $result = Invoke-EncodeJob -Job $job
+
+        $result.Success | Should Be $true
+        $result.Log | Should Be "INPUT=$inputFile"
+        $result.OutputFile | Should Be $outputFile
     }
 }

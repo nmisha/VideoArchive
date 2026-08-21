@@ -248,6 +248,10 @@ function Get-TempOutputPath {
 function Remove-IfExists {
     param([string]$Path)
 
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
     if (Test-Path -LiteralPath $Path) {
         try {
             Remove-Item -LiteralPath $Path -Force -ErrorAction Stop

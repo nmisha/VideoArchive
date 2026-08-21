@@ -136,7 +136,7 @@ function Read-AppendedLines {
         }
     }
 
-    $lines = @(Get-Content -LiteralPath $Path -ErrorAction SilentlyContinue)
+    $lines = @(Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction SilentlyContinue)
     $lineCount = @($lines).Count
     if ($lineCount -le $StartIndex) {
         return [pscustomobject]@{
@@ -149,6 +149,62 @@ function Read-AppendedLines {
         Lines = @($lines[$StartIndex..($lineCount - 1)])
         NextIndex = $lineCount
     }
+}
+
+function ConvertTo-WindowsCommandLineArgument {
+    param(
+        [AllowEmptyString()]
+        [string]$Argument
+    )
+
+    if ($null -eq $Argument) {
+        $Argument = ''
+    }
+
+    if ($Argument.Length -gt 0 -and $Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append([char]'"')
+    $backslashCount = 0
+
+    foreach ($character in $Argument.ToCharArray()) {
+        if ($character -eq [char]'\') {
+            $backslashCount++
+            continue
+        }
+
+        if ($character -eq [char]'"') {
+            [void]$builder.Append([char]'\', (($backslashCount * 2) + 1))
+            [void]$builder.Append([char]'"')
+        } else {
+            if ($backslashCount -gt 0) {
+                [void]$builder.Append([char]'\', $backslashCount)
+            }
+            [void]$builder.Append($character)
+        }
+
+        $backslashCount = 0
+    }
+
+    if ($backslashCount -gt 0) {
+        [void]$builder.Append([char]'\', ($backslashCount * 2))
+    }
+    [void]$builder.Append([char]'"')
+    return $builder.ToString()
+}
+
+function ConvertTo-WindowsCommandLine {
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [object[]]$Arguments
+    )
+
+    return (@($Arguments | ForEach-Object {
+        ConvertTo-WindowsCommandLineArgument -Argument ([string]$_)
+    }) -join ' ')
 }
 
 function Get-ArchiveOutputExtension {
@@ -639,6 +695,7 @@ function Invoke-EncodeJob {
 
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $arguments = @($Job.Arguments)
+    $argumentLine = ConvertTo-WindowsCommandLine -Arguments $arguments
     $logBuilder = New-Object System.Text.StringBuilder
     $stdoutPath = Join-Path -Path $outputDirectory -ChildPath ('encoder_stdout_{0}.log' -f [guid]::NewGuid().ToString('N'))
     $stderrPath = Join-Path -Path $outputDirectory -ChildPath ('encoder_stderr_{0}.log' -f [guid]::NewGuid().ToString('N'))
@@ -648,7 +705,7 @@ function Invoke-EncodeJob {
 
     try {
         $process = Start-Process -FilePath $Job.ExecutablePath `
-            -ArgumentList $arguments `
+            -ArgumentList $argumentLine `
             -RedirectStandardOutput $stdoutPath `
             -RedirectStandardError $stderrPath `
             -NoNewWindow `
@@ -726,7 +783,7 @@ function Invoke-EncodeJob {
         ExitCode = $exitCode
         OutputFile = $actualOutputFile
         Duration = $stopwatch.Elapsed
-        CommandLine = @($Job.Arguments) -join ' '
+        CommandLine = $argumentLine
         Log = $logBuilder.ToString().Trim()
         Backend = $Job.Backend
         Codec = $Job.Codec

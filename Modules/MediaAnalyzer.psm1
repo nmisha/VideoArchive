@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 
+Import-Module (Join-Path -Path $PSScriptRoot -ChildPath 'Utils.psm1') -Force
+
 function Get-TrackValue {
     param(
         [psobject]$Track,
@@ -255,17 +257,10 @@ function Get-VideoInfo {
         throw "MediaInfo executable not found: $MediaInfoPath"
     }
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        $json = & $MediaInfoPath --Output=JSON --Full --Language=raw --BOM $Path 2>&1 | ForEach-Object { $_.ToString() } | Out-String
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "MediaInfo failed for '$Path': $json"
-    }
+    $json = Invoke-VideoArchiveJsonTool `
+        -ExecutablePath $MediaInfoPath `
+        -Arguments @('--Output=JSON', '--Full', '--Language=raw', '--BOM', $Path) `
+        -Operation "MediaInfo analysis for '$Path'"
 
     $file = Get-Item -LiteralPath $Path
     ConvertFrom-MediaInfoJson -MediaInfoJson $json -Path $file.FullName -SourceSizeBytes $file.Length

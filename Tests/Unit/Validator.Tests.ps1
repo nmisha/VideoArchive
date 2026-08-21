@@ -531,6 +531,78 @@ Describe 'Validator' {
         ($result.Errors -join ' | ') | Should Match 'strict date mode'
     }
 
+    It 'validates capture date when only one output date tag exists' {
+        $captureDateResult = [pscustomobject]@{
+            Success = $true
+            DateTime = [datetime]'2012-09-01T22:08:13'
+            Source = 'Metadata'
+            Pattern = 'DateTimeOriginal'
+            Warnings = @()
+        }
+        $outputMetadata = [pscustomobject]@{
+            QuickTimeMediaCreateDate = '2012-09-01T22:08:13'
+            QuickTimeCreateDate = $null
+        }
+        $validatorModule = Get-Module Validator
+
+        $result = & $validatorModule {
+            param($CaptureDateResult, $OutputMetadata)
+            Test-CaptureDateValidation `
+                -CaptureDateResult $CaptureDateResult `
+                -OutputMetadata $OutputMetadata `
+                -StrictDateMode $false
+        } $captureDateResult $outputMetadata
+
+        @($result.Errors).Count | Should Be 0
+    }
+
+    It 'warns instead of failing when MKV capture date is preserved in filesystem timestamps' {
+        $sourceFile = Join-Path $tempRoot 'source_mkv_date.mts'
+        $outputFile = Join-Path $tempRoot 'output_mkv_date.mkv'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $expectedFileDate = [datetime]'2012-09-02T01:08:13'
+        $outputItem = Get-Item -LiteralPath $outputFile
+        $outputItem.CreationTime = $expectedFileDate
+        $outputItem.LastWriteTime = $expectedFileDate
+        $outputItem.LastAccessTime = $expectedFileDate
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'AVC'; AudioTrackCount = 1
+            AudioCodec = 'AC-3'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+        $outputInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AC-3'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+        $sourceMetadata = [pscustomobject]@{ DateTaken = '2012-09-01T22:08:13'; HasGps = $false }
+        $outputMetadata = [pscustomobject]@{
+            DateTaken = $null; HasGps = $false
+            QuickTimeMediaCreateDate = $null; QuickTimeCreateDate = $null
+        }
+        $captureDateResult = [pscustomobject]@{
+            Success = $true; DateTime = [datetime]'2012-09-01T22:08:13'; Source = 'Metadata'; Pattern = 'DateTimeOriginal'; Warnings = @()
+        }
+
+        $result = Test-EncodedVideo `
+            -SourceFile $sourceFile `
+            -SourceInfo $sourceInfo `
+            -OutputInfo $outputInfo `
+            -OutputFile $outputFile `
+            -ValidateTimestamps `
+            -SourceMetadata $sourceMetadata `
+            -OutputMetadata $outputMetadata `
+            -CaptureDateResult $captureDateResult `
+            -FileTimestampMode captureDate `
+            -FileTimestampOffset '+03:00'
+
+        $result.Success | Should Be $true
+        ($result.Warnings -join ' | ') | Should Match 'filesystem timestamps'
+    }
+
     It 'accepts AV1 when AV1 is the expected output codec' {
         $sourceFile = Join-Path $tempRoot 'source_av1_ok.mp4'
         $outputFile = Join-Path $tempRoot 'output_av1_ok.mp4'

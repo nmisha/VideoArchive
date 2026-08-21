@@ -99,6 +99,8 @@ function Test-MetadataPreserved {
 
         [psobject]$OutputMetadata,
 
+        [switch]$AllowMissingDateTaken,
+
         [double]$GpsTolerance = 0.0001
     )
 
@@ -110,7 +112,10 @@ function Test-MetadataPreserved {
 
     if (-not [string]::IsNullOrWhiteSpace([string]$SourceMetadata.DateTaken)) {
         if (-not (Test-StringEquivalentNormalized -Actual $OutputMetadata.DateTaken -Expected $SourceMetadata.DateTaken)) {
-            $errors.Add("DateTaken mismatch: '$($SourceMetadata.DateTaken)' -> '$($OutputMetadata.DateTaken)'")
+            $dateTakenIsMissing = [string]::IsNullOrWhiteSpace([string]$OutputMetadata.DateTaken)
+            if (-not ($AllowMissingDateTaken -and $dateTakenIsMissing)) {
+                $errors.Add("DateTaken mismatch: '$($SourceMetadata.DateTaken)' -> '$($OutputMetadata.DateTaken)'")
+            }
         }
     }
 
@@ -137,6 +142,8 @@ function Test-CaptureDateValidation {
         [psobject]$OutputMetadata,
 
         [bool]$StrictDateMode,
+
+        [switch]$AllowMissingOutputDateTags,
 
         [double]$ToleranceSeconds = 2
     )
@@ -174,13 +181,17 @@ function Test-CaptureDateValidation {
         }
     }
 
-    $candidateDates = @(
+    $candidateDates = @(@(
         $OutputMetadata.QuickTimeMediaCreateDate
         $OutputMetadata.QuickTimeCreateDate
-    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
     if ($candidateDates.Count -eq 0) {
-        $errors.Add('Output capture date tags are missing.')
+        if ($AllowMissingOutputDateTags) {
+            $warnings.Add('Output container does not support writable embedded capture-date tags; capture date is preserved in filesystem timestamps.')
+        } else {
+            $errors.Add('Output capture date tags are missing.')
+        }
         return [pscustomobject]@{
             Warnings = @($warnings)
             Errors = @($errors)
@@ -469,11 +480,20 @@ function Test-EncodedVideo {
         }
     }
 
-    foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata)) {
+    $outputExtension = [System.IO.Path]::GetExtension($OutputFile).ToLowerInvariant()
+    $captureDateStoredInFileTimestamps = (
+        $ValidateTimestamps -and
+        $FileTimestampMode -eq 'captureDate' -and
+        $null -ne $CaptureDateResult -and
+        $CaptureDateResult.Success
+    )
+    $allowMissingEmbeddedDate = ($outputExtension -eq '.mkv' -and $captureDateStoredInFileTimestamps)
+
+    foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata -AllowMissingDateTaken:$allowMissingEmbeddedDate)) {
         $errors.Add($metadataError)
     }
 
-    $captureDateValidation = Test-CaptureDateValidation -CaptureDateResult $CaptureDateResult -OutputMetadata $OutputMetadata -StrictDateMode:$StrictDateMode
+    $captureDateValidation = Test-CaptureDateValidation -CaptureDateResult $CaptureDateResult -OutputMetadata $OutputMetadata -StrictDateMode:$StrictDateMode -AllowMissingOutputDateTags:$allowMissingEmbeddedDate
     foreach ($warning in $captureDateValidation.Warnings) {
         $warnings.Add($warning)
     }
