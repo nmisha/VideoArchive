@@ -62,7 +62,13 @@ function Format-VideoArchiveQueueFlags {
         [switch]$Resume,
 
         [ValidateSet('failed', 'unfinished', 'all')]
-        [string]$ResumeMode = 'unfinished'
+        [string]$ResumeMode = 'unfinished',
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$RotationDegrees = 0
     )
 
     $flags = New-Object System.Collections.Generic.List[string]
@@ -70,6 +76,7 @@ function Format-VideoArchiveQueueFlags {
     if ($NoSmartSkip) { $flags.Add('NoSmartSkip') }
     if ($DryRun) { $flags.Add('DryRun') }
     if ($Resume) { $flags.Add("Resume:$ResumeMode") }
+    if ($RotationMode -ne 'none' -and $RotationDegrees -ne 0) { $flags.Add("Rotate:$RotationMode/$RotationDegrees") }
 
     if ($flags.Count -eq 0) {
         return 'Default'
@@ -99,7 +106,13 @@ function New-VideoArchiveQueueItem {
         [switch]$Resume,
 
         [ValidateSet('failed', 'unfinished', 'all')]
-        [string]$ResumeMode = 'unfinished'
+        [string]$ResumeMode = 'unfinished',
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$RotationDegrees = 0
     )
 
     $resolvedPath = [System.IO.Path]::GetFullPath($InputPath)
@@ -115,7 +128,10 @@ function New-VideoArchiveQueueItem {
         DryRun = [bool]$DryRun
         Resume = [bool]$Resume
         ResumeMode = $ResumeMode
-        Flags = Format-VideoArchiveQueueFlags -Force:$Force -NoSmartSkip:$NoSmartSkip -DryRun:$DryRun -Resume:$Resume -ResumeMode $ResumeMode
+        RotationMode = $RotationMode
+        RotationDegrees = $RotationDegrees
+        Rotation = if ($RotationMode -eq 'none') { 'None' } else { "$RotationMode/$RotationDegrees" }
+        Flags = Format-VideoArchiveQueueFlags -Force:$Force -NoSmartSkip:$NoSmartSkip -DryRun:$DryRun -Resume:$Resume -ResumeMode $ResumeMode -RotationMode $RotationMode -RotationDegrees $RotationDegrees
         Status = 'Queued'
         ProgressPercent = 0
         CurrentFile = $null
@@ -141,6 +157,8 @@ function ConvertTo-VideoArchiveCliArguments {
         [psobject]$QueueItem
     )
 
+    $rotationMode = if ($null -ne $QueueItem.PSObject.Properties['RotationMode']) { [string]$QueueItem.RotationMode } else { 'none' }
+    $rotationDegrees = if ($null -ne $QueueItem.PSObject.Properties['RotationDegrees']) { [int]$QueueItem.RotationDegrees } else { 0 }
     $arguments = @(
         '-NoProfile'
         '-ExecutionPolicy'
@@ -155,6 +173,10 @@ function ConvertTo-VideoArchiveCliArguments {
         $QueueItem.EncoderBackend
         '-OutputCodec'
         $QueueItem.OutputCodec
+        '-RotationMode'
+        $rotationMode
+        '-RotationDegrees'
+        [string]$rotationDegrees
     )
 
     if ($QueueItem.Force) { $arguments += '-Force' }

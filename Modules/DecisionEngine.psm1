@@ -52,7 +52,13 @@ function Get-EncodeDecision {
 
         [switch]$Force,
 
-        [switch]$NoSmartSkip
+        [switch]$NoSmartSkip,
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$RotationDegrees = 0
     )
 
     $outputGroup = if ($VideoInfo.IsHdr) { 'HDR' } else { 'SDR' }
@@ -107,6 +113,16 @@ function Get-EncodeDecision {
             Reason = "Legacy source container $sourceExtension requires archive transcode"
             OutputGroup = $outputGroup
             SmartSkipApplied = $true
+            ProtectOutputFromSavingsDiscard = $true
+        }
+    }
+
+    if ($RotationMode -ne 'none' -and $RotationDegrees -ne 0) {
+        return [pscustomobject]@{
+            Action = 'Encode'
+            Reason = if ($RotationMode -eq 'metadata') { "Metadata rotation by $RotationDegrees degrees" } else { "Physical rotation by $RotationDegrees degrees" }
+            OutputGroup = $outputGroup
+            SmartSkipApplied = $false
             ProtectOutputFromSavingsDiscard = $true
         }
     }

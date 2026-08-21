@@ -55,6 +55,29 @@ Describe 'Metadata' {
         }
     }
 
+    It 'preserves an earlier creation time than last-write time' {
+        $tempRoot = Join-Path $env:TEMP ('VideoArchiveTimestampOrder_' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+        try {
+            $sourceFile = Join-Path $tempRoot 'source.mp4'
+            $outputFile = Join-Path $tempRoot 'output.mp4'
+            Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+            Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+            $source = Get-Item -LiteralPath $sourceFile
+            $source.LastWriteTimeUtc = [datetime]'2026-07-07T00:00:00Z'
+            $source.CreationTimeUtc = [datetime]'2026-07-07T00:00:00Z'
+            $source.LastWriteTimeUtc = [datetime]'2026-07-07T00:00:12Z'
+
+            Set-FileSystemTimestamps -SourceFile $sourceFile -DestinationFile $outputFile -FileTimestampMode preserve
+
+            $output = Get-Item -LiteralPath $outputFile
+            $output.CreationTimeUtc | Should Be $source.CreationTimeUtc
+            $output.LastWriteTimeUtc | Should Be $source.LastWriteTimeUtc
+        } finally {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     It 'writes capture date and source identity to an MKV sidecar' {
         $tempRoot = Join-Path $env:TEMP ('VideoArchiveSidecar_' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null

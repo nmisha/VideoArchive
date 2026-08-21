@@ -125,6 +125,35 @@ exit /b 0
         ($job.Arguments -join ' ') | Should Match 'crf=20'
     }
 
+    It 'adds the Rigaya physical rotation filter' {
+        $videoInfo = [pscustomobject]@{ IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 10; AudioTracks = @(); Codec = 'AVC' }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mp4' -OutputFile 'D:\out.mp4' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -RequestedBackend nvenc -RotationMode physical -PhysicalRotation 90
+
+        ($job.Arguments -join ' ') | Should Match '--vpp-rotate 90'
+        $job.PhysicalRotation | Should Be 90
+    }
+
+    It 'adds the FFmpeg physical rotation filter' {
+        $videoInfo = [pscustomobject]@{ IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 10; AudioTracks = @(); Codec = 'AVC' }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mp4' -OutputFile 'D:\out.mp4' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -RequestedBackend software -RotationMode physical -PhysicalRotation 270
+
+        ($job.Arguments -join ' ') | Should Match '-vf transpose=cclock'
+        ($job.Arguments -join ' ') | Should Match '-noautorotate'
+    }
+
+    It 'builds a stream-copy job for metadata rotation' {
+        $videoInfo = [pscustomobject]@{ IsHdr = $false; DurationSeconds = 10; Codec = 'HEVC' }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mp4' -OutputFile 'D:\out.mp4' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -RotationMode metadata
+
+        $job.Operation | Should Be 'copy'
+        $job.Backend | Should Be 'metadata'
+        $job.AudioMode | Should Be 'copy'
+        $job.Codec | Should Be 'hevc'
+    }
+
     It 'selects the configured archive container extension' {
         (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MTS' -Container mp4) | Should Be '.mp4'
         (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MTS' -Container mkv) | Should Be '.mkv'

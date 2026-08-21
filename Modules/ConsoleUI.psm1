@@ -132,6 +132,110 @@ function Select-VideoArchivePreset {
     throw "Invalid preset selection: $selection"
 }
 
+function Select-VideoArchiveAdvancedOperation {
+    [CmdletBinding()]
+    param()
+
+    Complete-InlineTelemetry
+    Write-Host 'Advanced mode:' -ForegroundColor Cyan
+    Write-Host '1. Video rotation'
+    Write-Host ''
+    $operationSelection = Read-Host 'Select operation (1)'
+    if ($operationSelection.Trim() -ne '1') {
+        throw "Invalid Advanced operation selection: $operationSelection"
+    }
+
+    $rotationChoices = @(
+        [pscustomobject]@{ Mode = 'metadata'; Degrees = 90;  Label = 'Metadata rotation - 90 degrees clockwise' }
+        [pscustomobject]@{ Mode = 'metadata'; Degrees = 180; Label = 'Metadata rotation - 180 degrees clockwise' }
+        [pscustomobject]@{ Mode = 'metadata'; Degrees = 270; Label = 'Metadata rotation - 270 degrees clockwise' }
+        [pscustomobject]@{ Mode = 'physical'; Degrees = 90;  Label = 'Physical rotation - 90 degrees clockwise' }
+        [pscustomobject]@{ Mode = 'physical'; Degrees = 180; Label = 'Physical rotation - 180 degrees clockwise' }
+        [pscustomobject]@{ Mode = 'physical'; Degrees = 270; Label = 'Physical rotation - 270 degrees clockwise' }
+    )
+
+    Write-Host ''
+    Write-Host 'Video rotation:' -ForegroundColor Cyan
+    for ($index = 0; $index -lt $rotationChoices.Count; $index++) {
+        Write-Host ("{0}. {1}" -f ($index + 1), $rotationChoices[$index].Label)
+    }
+
+    Write-Host ''
+    $rotationSelection = Read-Host ("Select rotation (1-{0})" -f $rotationChoices.Count)
+    $parsedRotationIndex = 0
+    if (-not [int]::TryParse($rotationSelection, [ref]$parsedRotationIndex) -or $parsedRotationIndex -lt 1 -or $parsedRotationIndex -gt $rotationChoices.Count) {
+        throw "Invalid rotation selection: $rotationSelection"
+    }
+
+    $inputPath = Read-Host 'Enter path to video file'
+    if ([string]::IsNullOrWhiteSpace($inputPath)) {
+        throw 'Video file path is required for Advanced rotation.'
+    }
+
+    $choice = $rotationChoices[$parsedRotationIndex - 1]
+    return [pscustomobject]@{
+        Operation = 'rotation'
+        RotationMode = $choice.Mode
+        RotationDegrees = $choice.Degrees
+        InputPath = $inputPath
+    }
+}
+
+function Select-VideoArchiveMainMenu {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$PresetCatalog
+    )
+
+    Complete-InlineTelemetry
+    Write-Host 'Main menu:' -ForegroundColor Cyan
+    $presetCount = @($PresetCatalog.Presets).Count
+    for ($index = 0; $index -lt $presetCount; $index++) {
+        $preset = $PresetCatalog.Presets[$index]
+        $suffix = if ($preset.IsDefault) { ' [default]' } else { '' }
+        Write-Host ("{0}. {1} - {2}{3}" -f ($index + 1), $preset.Name, $preset.Description, $suffix)
+    }
+
+    $advancedIndex = $presetCount + 1
+    Write-Host ("{0}. Advanced" -f $advancedIndex) -ForegroundColor Yellow
+    Write-Host ''
+    $selection = Read-Host ("Select menu item (1-{0}) or press Enter for {1}" -f $advancedIndex, $PresetCatalog.DefaultPreset)
+    if ([string]::IsNullOrWhiteSpace($selection)) {
+        return [pscustomobject]@{ Mode = 'preset'; PresetName = $PresetCatalog.DefaultPreset; Advanced = $null }
+    }
+
+    $parsedIndex = 0
+    if ([int]::TryParse($selection, [ref]$parsedIndex)) {
+        if ($parsedIndex -ge 1 -and $parsedIndex -le $presetCount) {
+            return [pscustomobject]@{ Mode = 'preset'; PresetName = $PresetCatalog.Presets[$parsedIndex - 1].Name; Advanced = $null }
+        }
+        if ($parsedIndex -eq $advancedIndex) {
+            return [pscustomobject]@{
+                Mode = 'advanced'
+                PresetName = $PresetCatalog.DefaultPreset
+                Advanced = Select-VideoArchiveAdvancedOperation
+            }
+        }
+    }
+
+    foreach ($preset in $PresetCatalog.Presets) {
+        if ($preset.Name -ieq $selection.Trim()) {
+            return [pscustomobject]@{ Mode = 'preset'; PresetName = $preset.Name; Advanced = $null }
+        }
+    }
+
+    if ($selection.Trim() -ieq 'Advanced') {
+        return [pscustomobject]@{
+            Mode = 'advanced'
+            PresetName = $PresetCatalog.DefaultPreset
+            Advanced = Select-VideoArchiveAdvancedOperation
+        }
+    }
+
+    throw "Invalid main menu selection: $selection"
+}
+
 function Select-VideoArchiveEncoderChoice {
     [CmdletBinding()]
     param(
@@ -518,4 +622,4 @@ function Show-VideoArchiveSummary {
     }
 }
 
-Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Select-VideoArchiveEncoderChoice, Write-VideoArchiveStatus, Write-DecisionStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus, Reset-EncodeTelemetryState
+Export-ModuleMember -Function Show-VideoArchiveBanner, Select-VideoArchivePreset, Select-VideoArchiveMainMenu, Select-VideoArchiveAdvancedOperation, Select-VideoArchiveEncoderChoice, Write-VideoArchiveStatus, Write-DecisionStatus, Write-CaptureDateStatus, Update-VideoArchiveProgress, Update-EncodeTelemetry, Complete-VideoArchiveProgress, Show-VideoArchiveSummary, Write-FileResultStatus, Reset-EncodeTelemetryState

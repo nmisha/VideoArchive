@@ -1,6 +1,27 @@
 Import-Module "$PSScriptRoot\..\..\Modules\DecisionEngine.psm1" -Force
 
 Describe 'DecisionEngine' {
+    It 'forces a requested physical rotation through Smart Skip' {
+        $videoInfo = [pscustomobject]@{ IsHdr = $false; Codec = 'HEVC'; BitrateMbps = 1; Width = 1920; Height = 1080; SourceSizeMb = 1 }
+        $smartSkip = [pscustomobject]@{ enabled = $true; skipIfOutputExists = $false; skipAv1 = $true; skipSmallFilesMb = 50; encodeSmallModernFiles = $false; legacySourceExtensions = @('.mts'); skipHevcBelowMbps1080p = 8; skipHevcBelowMbps4k = 15; skipHevcBelowMbps8k = 30 }
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath 'D:\in.mp4' -OutputFile 'D:\out.mp4' -SmartSkip $smartSkip -RotationMode physical -RotationDegrees 90
+
+        $decision.Action | Should Be 'Encode'
+        $decision.ProtectOutputFromSavingsDiscard | Should Be $true
+        $decision.Reason | Should Match 'Physical rotation'
+    }
+
+    It 'treats a physical 270-degree rotation as an explicit transformation' {
+        $videoInfo = [pscustomobject]@{ IsHdr = $false; Codec = 'HEVC'; BitrateMbps = 1; Width = 1920; Height = 1080; SourceSizeMb = 1 }
+        $smartSkip = [pscustomobject]@{ enabled = $true; skipIfOutputExists = $false; skipAv1 = $true; skipSmallFilesMb = 50; encodeSmallModernFiles = $false; legacySourceExtensions = @('.mts'); skipHevcBelowMbps1080p = 8; skipHevcBelowMbps4k = 15; skipHevcBelowMbps8k = 30 }
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath 'D:\in.mp4' -OutputFile 'D:\out.mp4' -SmartSkip $smartSkip -RotationMode physical -RotationDegrees 270
+
+        $decision.Action | Should Be 'Encode'
+        $decision.Reason | Should Match '270'
+    }
+
     BeforeAll {
         $smartSkip = [pscustomobject]@{
             enabled = $true

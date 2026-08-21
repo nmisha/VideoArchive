@@ -11,7 +11,11 @@
     [ValidateSet('auto', 'nvenc', 'qsv', 'amf', 'software')]
     [string]$EncoderBackend = 'auto',
     [ValidateSet('auto', 'hevc', 'av1')]
-    [string]$OutputCodec = 'auto'
+    [string]$OutputCodec = 'auto',
+    [ValidateSet('config', 'none', 'metadata', 'physical')]
+    [string]$RotationMode = 'config',
+    [ValidateSet('config', '0', '90', '180', '270')]
+    [string]$RotationDegrees = 'config'
 )
 
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -336,10 +340,22 @@ function Get-ReadableErrorMessage {
 try {
     if ([string]::IsNullOrWhiteSpace($Preset)) {
         $presetCatalog = Get-VideoArchivePresetCatalog -ProjectRoot $projectRoot
-        $Preset = Select-VideoArchivePreset -PresetCatalog $presetCatalog
+        $menuSelection = Select-VideoArchiveMainMenu -PresetCatalog $presetCatalog
+        $Preset = $menuSelection.PresetName
+        if ($menuSelection.Mode -eq 'advanced') {
+            $RotationMode = [string]$menuSelection.Advanced.RotationMode
+            $RotationDegrees = [string]$menuSelection.Advanced.RotationDegrees
+            $InputPath = [string]$menuSelection.Advanced.InputPath
+        }
     }
 
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
+    if ($RotationMode -eq 'config') { $RotationMode = [string]$config.Advanced.rotationMode }
+    $resolvedRotationDegrees = if ($RotationDegrees -eq 'config') { [int]$config.Advanced.rotationDegrees } else { [int]$RotationDegrees }
+    if ($RotationMode -eq 'none' -or $resolvedRotationDegrees -eq 0) {
+        $RotationMode = 'none'
+        $resolvedRotationDegrees = 0
+    }
     $script:VideoArchivePresetName = $config.PresetName
     $script:VideoArchiveEncoderBackend = $EncoderBackend
     $script:VideoArchiveOutputCodec = $OutputCodec
@@ -410,7 +426,7 @@ try {
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $(@($files).Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
-    Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec container=$($config.Output.Container) audio=$($config.Audio.mode)"
+    Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec container=$($config.Output.Container) audio=$($config.Audio.mode) rotation=$RotationMode/$resolvedRotationDegrees"
     if ($hardwareProfile.DetectionAttempted -and $hardwareProfile.HasNvidiaRtx) {
         $rtxNames = @($hardwareProfile.Adapters | Where-Object { [string]$_.Name -match 'RTX' } | Select-Object -ExpandProperty Name)
         if (@($rtxNames).Count -gt 0) {
@@ -428,7 +444,7 @@ try {
         Write-VideoArchiveStatus -Message "Resume Skipped: $(@($resumePlan.SkippedFiles).Count)"
     }
 
-    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec OutputContainer=$($config.Output.Container) AudioMode=$($config.Audio.mode)"
+    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec OutputContainer=$($config.Output.Container) AudioMode=$($config.Audio.mode) RotationMode=$RotationMode RotationDegrees=$resolvedRotationDegrees"
 
     if (@($files).Count -eq 0) {
         $message = if ($null -ne $resumePlan) { 'No files scheduled after resume filtering.' } else { 'No supported video files found.' }
@@ -519,13 +535,19 @@ try {
                 Write-VideoArchiveStatus -Message ("Warning: {0} | {1}" -f $file.RelativePath, $captureWarning) -Level Warn
             }
 
-            $outputExtension = Get-ArchiveOutputExtension -SourcePath $file.Path -Container $config.Output.Container
+            $sourceExtension = [System.IO.Path]::GetExtension($file.Path).ToLowerInvariant()
+            if ($RotationMode -eq 'metadata' -and $sourceExtension -notin @('.mp4', '.mov', '.m4v')) {
+                throw "Metadata-only rotation supports MP4, MOV, and M4V sources; got '$sourceExtension' for '$($file.Path)'. Select physical rotation."
+            }
+            $outputExtension = if ($RotationMode -eq 'metadata') { $sourceExtension } else { Get-ArchiveOutputExtension -SourcePath $file.Path -Container $config.Output.Container }
             $relativeOutputPath = [System.IO.Path]::ChangeExtension($file.RelativePath, $outputExtension)
             $outputRoot = if ($videoInfo.IsHdr) { $outputRoots.HDR } else { $outputRoots.SDR }
             $finalOutputFile = Join-Path -Path $outputRoot -ChildPath $relativeOutputPath
             $expectedSidecarFile = if ($outputExtension -eq '.mkv') { Get-VideoMetadataSidecarPath -VideoPath $finalOutputFile } else { $null }
             $requestedCodec = if ($OutputCodec -eq 'auto') { $null } else { $OutputCodec }
             $resolvedOutputCodec = (Resolve-OutputCodec -VideoInfo $videoInfo -EncoderConfig $config.Encoder -RequestedCodec $requestedCodec).ToUpperInvariant()
+            $sourceRotation = if ($null -eq $videoInfo.Rotation) { 0 } else { [int][math]::Round([double]$videoInfo.Rotation) }
+            $appliedRotation = (($sourceRotation + $resolvedRotationDegrees) % 360 + 360) % 360
 
             if (-not $captureDateResult.Success -and [bool]$config.Dates.strictDateMode) {
                 $summary.Skipped++
@@ -575,7 +597,7 @@ try {
                 continue
             }
 
-            $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath $file.Path -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -RequiredSidecarFile $expectedSidecarFile -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip
+            $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath $file.Path -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -RequiredSidecarFile $expectedSidecarFile -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip -RotationMode $RotationMode -RotationDegrees $resolvedRotationDegrees
             Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $fileCount, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
 
             if ($decision.Action -eq 'Skip') {
@@ -671,7 +693,7 @@ try {
             }
 
             $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
-            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -AudioConfig $config.Audio -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec
+            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -AudioConfig $config.Audio -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec -RotationMode $RotationMode -PhysicalRotation $(if ($RotationMode -eq 'physical') { $appliedRotation } else { 0 })
             $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $fileCount -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
             $tempOutputFile = $encodeResult.OutputFile
 
@@ -728,11 +750,19 @@ try {
 
             Move-Item -LiteralPath $tempOutputFile -Destination $finalOutputFile -Force
             $outputPromoted = $true
-            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source) | Out-Null
+            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source) -ExcludeRotation:($RotationMode -eq 'physical') | Out-Null
             if ($captureDateResult.Success -and $outputExtension -in @('.mp4', '.mov', '.m4v')) {
                 Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
                 if ([bool]$config.Metadata.preserveWindowsTimestamps) {
                     Set-FileSystemTimestamps -SourceFile $file.Path -DestinationFile $finalOutputFile -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $captureDateResult.DateTime -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source)
+                }
+            }
+
+            if ($RotationMode -in @('metadata', 'physical') -and $outputExtension -in @('.mp4', '.mov', '.m4v')) {
+                $targetRotation = if ($RotationMode -eq 'metadata') { $appliedRotation } else { 0 }
+                Set-VideoRotationMetadata -Path $finalOutputFile -RotationDegrees $targetRotation -ExifToolPath $config.Tools.ExifTool | Out-Null
+                if ([bool]$config.Metadata.preserveWindowsTimestamps) {
+                    Set-FileSystemTimestamps -SourceFile $file.Path -DestinationFile $finalOutputFile -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source)
                 }
             }
 
@@ -742,7 +772,7 @@ try {
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
             $outputMetadata = Get-VideoMetadataSnapshot -Path $finalOutputFile -ExifToolPath $config.Tools.ExifTool
-            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -ExpectedOutputCodec $job.Codec.ToUpperInvariant() -ExpectedAudioMode $config.Audio.mode -SidecarPath $metadataSidecarPath
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -ExpectedOutputCodec $job.Codec.ToUpperInvariant() -ExpectedAudioMode $job.AudioMode -SidecarPath $metadataSidecarPath -RotationMode $RotationMode -AppliedRotation $appliedRotation
 
             if (-not $validation.Success) {
                 $summary.Failed++

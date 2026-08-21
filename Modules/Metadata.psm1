@@ -136,23 +136,26 @@ function Set-FileSystemTimestamps {
     if ($FileTimestampMode -eq 'captureDate' -and $null -ne $CaptureDate) {
         if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) {
             $targetUtc = $CaptureDateTimeOffset.UtcDateTime
-            $destination.CreationTimeUtc = $targetUtc
             $destination.LastWriteTimeUtc = $targetUtc
+            $destination.CreationTimeUtc = $targetUtc
             $destination.LastAccessTimeUtc = $targetUtc
             return
         }
 
         $targetDate = [datetime]::SpecifyKind($CaptureDate, [DateTimeKind]::Unspecified)
 
-        $destination.CreationTime = $targetDate
         $destination.LastWriteTime = $targetDate
+        $destination.CreationTime = $targetDate
         $destination.LastAccessTime = $targetDate
         return
     }
 
-    $destination.CreationTime = $source.CreationTime
-    $destination.LastWriteTime = $source.LastWriteTime
-    $destination.LastAccessTime = $source.LastAccessTime
+    # Some Windows filesystems clamp CreationTime to the current LastWriteTime.
+    # Set an early write time first, then creation time, then restore write time.
+    $destination.LastWriteTimeUtc = if ($source.CreationTimeUtc -lt $source.LastWriteTimeUtc) { $source.CreationTimeUtc } else { $source.LastWriteTimeUtc }
+    $destination.CreationTimeUtc = $source.CreationTimeUtc
+    $destination.LastWriteTimeUtc = $source.LastWriteTimeUtc
+    $destination.LastAccessTimeUtc = $source.LastAccessTimeUtc
 }
 
 function Copy-VideoMetadata {
@@ -178,6 +181,8 @@ function Copy-VideoMetadata {
 
         [switch]$HasTimezone,
 
+        [switch]$ExcludeRotation,
+
         [string]$CaptureDateSource = 'None',
 
         [string]$CaptureDateOffset = '+00:00'
@@ -201,6 +206,9 @@ function Copy-VideoMetadata {
         '-FileModifyDate'
         $DestinationFile
     )
+    if ($ExcludeRotation) {
+        $args = @($args[0..7]) + '--Rotation' + $args[8]
+    }
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -261,6 +269,45 @@ function Get-VideoMetadataSnapshot {
     return ConvertFrom-ExifToolJson -ExifToolJson $output -Path $Path
 }
 
+function Set-VideoRotationMetadata {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$RotationDegrees,
+
+        [Parameter(Mandatory)]
+        [string]$ExifToolPath
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Rotation metadata target was not found: $Path"
+    }
+
+    $extension = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
+    if ($extension -notin @('.mp4', '.mov', '.m4v')) {
+        throw "Metadata-only rotation supports MP4, MOV, and M4V files; got '$extension'. Use physical rotation for this container."
+    }
+
+    $args = @('-overwrite_original', "-Rotation=$RotationDegrees", $Path)
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($LASTEXITCODE -ne 0 -or $output -match '(?im)^\s*Error:') {
+        throw "ExifTool failed to set rotation metadata for '$Path': $($output.Trim())"
+    }
+
+    return $output.Trim()
+}
+
 function Get-VideoMetadataSidecarPath {
     [CmdletBinding()]
     param(
@@ -312,4 +359,4 @@ function Write-VideoMetadataSidecar {
     return $sidecarPath
 }
 
-Export-ModuleMember -Function Copy-VideoMetadata, ConvertFrom-ExifToolJson, Get-VideoMetadataSnapshot, Get-VideoMetadataSidecarPath, Write-VideoMetadataSidecar, Set-FileSystemTimestamps
+Export-ModuleMember -Function Copy-VideoMetadata, ConvertFrom-ExifToolJson, Get-VideoMetadataSnapshot, Get-VideoMetadataSidecarPath, Write-VideoMetadataSidecar, Set-FileSystemTimestamps, Set-VideoRotationMetadata

@@ -529,7 +529,10 @@ function New-RigayaEncodeJob {
         [Parameter(Mandatory)]
         [string]$Codec,
 
-        [psobject]$AudioConfig
+        [psobject]$AudioConfig,
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$PhysicalRotation = 0
     )
 
     $qvbr = if ($VideoInfo.IsHdr) { [string]$Preset.qvbrHdr } else { [string]$Preset.qvbrSdr }
@@ -579,6 +582,7 @@ function New-RigayaEncodeJob {
     if (-not [bool]$Preset.adaptiveI -and (Test-EncoderOptionSupported -ExecutablePath $executablePath -OptionName '--no-i-adapt')) { $args += '--no-i-adapt' }
     if (-not [bool]$Preset.adaptiveB -and (Test-EncoderOptionSupported -ExecutablePath $executablePath -OptionName '--no-b-adapt')) { $args += '--no-b-adapt' }
     if ([bool]$Preset.strictGop) { $args += '--strict-gop' }
+    if ($PhysicalRotation -ne 0) { $args += @('--vpp-rotate', [string]$PhysicalRotation) }
     if ((Test-EncoderOptionSupported -ExecutablePath $executablePath -OptionName '--device')) {
         $args += @('--device', [string]$EncoderConfig.preferredGpu)
     }
@@ -619,6 +623,7 @@ function New-RigayaEncodeJob {
         EncoderLabel = [System.IO.Path]::GetFileName($executablePath)
         SourceDurationSeconds = $VideoInfo.DurationSeconds
         AudioMode = $audioPolicy.Mode
+        PhysicalRotation = $PhysicalRotation
     }
 }
 
@@ -640,7 +645,12 @@ function New-SoftwareEncodeJob {
         [Parameter(Mandatory)]
         [psobject]$Preset,
 
-        [psobject]$AudioConfig
+        [psobject]$AudioConfig,
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$PhysicalRotation = 0,
+
+        [switch]$PhysicalRotationEnabled
     )
 
     $crf = if ($VideoInfo.IsHdr) { [string]$Preset.qvbrHdr } else { [string]$Preset.qvbrSdr }
@@ -648,6 +658,9 @@ function New-SoftwareEncodeJob {
     $args = @(
         '-hide_banner'
         '-y'
+    )
+    if ($PhysicalRotationEnabled) { $args += '-noautorotate' }
+    $args += @(
         '-i', $InputFile
         '-map', '0'
         '-map_metadata', '0'
@@ -669,6 +682,14 @@ function New-SoftwareEncodeJob {
             }
         }
     }
+
+    $rotationFilter = switch ($PhysicalRotation) {
+        90 { 'transpose=clock' }
+        180 { 'hflip,vflip' }
+        270 { 'transpose=cclock' }
+        default { $null }
+    }
+    if ($null -ne $rotationFilter) { $args += @('-vf', $rotationFilter) }
 
     $x265Params = @("crf=$crf", 'repeat-headers=1')
     if ($VideoInfo.IsHdr) {
@@ -698,6 +719,7 @@ function New-SoftwareEncodeJob {
         EncoderLabel = [System.IO.Path]::GetFileName($Tools.Ffmpeg)
         SourceDurationSeconds = $VideoInfo.DurationSeconds
         AudioMode = $audioPolicy.Mode
+        PhysicalRotation = $PhysicalRotation
     }
 }
 
@@ -726,17 +748,42 @@ function New-EncodeJob {
 
         [string]$RequestedBackend,
 
-        [string]$RequestedCodec
+        [string]$RequestedCodec,
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$PhysicalRotation = 0
     )
+
+    if ($RotationMode -eq 'metadata') {
+        return [pscustomobject]@{
+            InputFile = $InputFile
+            OutputFile = $OutputFile
+            ExecutablePath = $null
+            Arguments = @('copy', $InputFile, $OutputFile)
+            IsHdr = $VideoInfo.IsHdr
+            PresetName = [string]$Preset.description
+            Backend = 'metadata'
+            Codec = ([string]$VideoInfo.Codec).ToLowerInvariant()
+            TelemetryFormat = 'copy'
+            EncoderLabel = 'metadata copy'
+            SourceDurationSeconds = $VideoInfo.DurationSeconds
+            AudioMode = 'copy'
+            Operation = 'copy'
+            PhysicalRotation = 0
+        }
+    }
 
     $codec = Resolve-OutputCodec -VideoInfo $VideoInfo -EncoderConfig $EncoderConfig -RequestedCodec $RequestedCodec
     $backend = Resolve-EncoderBackend -Tools $Tools -EncoderConfig $EncoderConfig -Codec $codec -RequestedBackend $RequestedBackend
 
     switch ($backend) {
-        'nvenc' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
-        'qsv' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
-        'amf' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
-        'software' { return New-SoftwareEncodeJob -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -AudioConfig $AudioConfig }
+        'nvenc' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig -PhysicalRotation $PhysicalRotation }
+        'qsv' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig -PhysicalRotation $PhysicalRotation }
+        'amf' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig -PhysicalRotation $PhysicalRotation }
+        'software' { return New-SoftwareEncodeJob -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -AudioConfig $AudioConfig -PhysicalRotation $PhysicalRotation -PhysicalRotationEnabled:($RotationMode -eq 'physical') }
         default { throw "Unsupported encoder backend '$backend'." }
     }
 }
@@ -765,6 +812,23 @@ function Invoke-EncodeJob {
             Duration = [TimeSpan]::Zero
             CommandLine = @($Job.Arguments) -join ' '
             Log = 'Dry run'
+            Backend = $Job.Backend
+            Codec = $Job.Codec
+        }
+    }
+
+    $operation = if ($null -ne $Job.PSObject.Properties['Operation']) { [string]$Job.Operation } else { 'encode' }
+    if ($operation -eq 'copy') {
+        $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+        Copy-Item -LiteralPath $Job.InputFile -Destination $Job.OutputFile -Force
+        $stopwatch.Stop()
+        return [pscustomobject]@{
+            Success = $true
+            ExitCode = 0
+            OutputFile = $Job.OutputFile
+            Duration = $stopwatch.Elapsed
+            CommandLine = "copy `"$($Job.InputFile)`" `"$($Job.OutputFile)`""
+            Log = 'Streams copied without re-encoding'
             Backend = $Job.Backend
             Codec = $Job.Codec
         }

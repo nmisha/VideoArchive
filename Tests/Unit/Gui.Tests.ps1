@@ -9,6 +9,8 @@ Describe 'GUI helpers' {
         $item.OutputCodec | Should Be 'auto'
         $item.Status | Should Be 'Queued'
         $item.Flags | Should Be 'Default'
+        $item.RotationMode | Should Be 'none'
+        $item.RotationDegrees | Should Be 0
     }
 
     It 'builds CLI arguments from a queue item' {
@@ -29,9 +31,20 @@ Describe 'GUI helpers' {
         ($args -join ' ') | Should Match '-Preset Archive'
         ($args -join ' ') | Should Match '-EncoderBackend nvenc'
         ($args -join ' ') | Should Match '-OutputCodec hevc'
+        ($args -join ' ') | Should Match '-RotationMode none -RotationDegrees 0'
         ($args -contains '-Force') | Should Be $true
         ($args -contains '-DryRun') | Should Be $true
         ($args -contains '-Resume') | Should Be $true
+    }
+
+    It 'passes Advanced rotation settings to the CLI' {
+        $item = New-VideoArchiveQueueItem -InputPath '.\README.md' -PresetName Balanced -RotationMode physical -RotationDegrees 90
+
+        $args = ConvertTo-VideoArchiveCliArguments -ScriptPath 'X:\Projects\VideoArchive\VideoArchive.ps1' -QueueItem $item
+
+        $item.Rotation | Should Be 'physical/90'
+        $item.Flags | Should Match 'Rotate:physical/90'
+        ($args -join ' ') | Should Match '-RotationMode physical -RotationDegrees 90'
     }
 
     It 'extracts a log path from console lines' {

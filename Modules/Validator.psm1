@@ -462,13 +462,18 @@ function Test-EncodedVideo {
 
         [string]$FileTimestampOffset = '+00:00',
 
-        [ValidateSet('HEVC', 'AV1')]
         [string]$ExpectedOutputCodec = 'HEVC',
 
         [ValidateSet('copy', 'aac')]
         [string]$ExpectedAudioMode = 'copy',
 
-        [string]$SidecarPath
+        [string]$SidecarPath,
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$AppliedRotation = 0
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -483,14 +488,31 @@ function Test-EncodedVideo {
         }
     }
 
-    if ($SourceInfo.Width -ne $OutputInfo.Width -or $SourceInfo.Height -ne $OutputInfo.Height) {
-        $errors.Add("Resolution mismatch: $($SourceInfo.Width)x$($SourceInfo.Height) -> $($OutputInfo.Width)x$($OutputInfo.Height)")
-    }
-
     $sourceRotation = if ($null -eq $SourceInfo.Rotation) { 0.0 } else { [double]$SourceInfo.Rotation }
     $outputRotation = if ($null -eq $OutputInfo.Rotation) { 0.0 } else { [double]$OutputInfo.Rotation }
-    if ([math]::Abs($sourceRotation - $outputRotation) -gt $RotationTolerance) {
-        $errors.Add("Rotation mismatch: $($SourceInfo.Rotation) -> $($OutputInfo.Rotation)")
+    $normalizedSourceRotation = (($sourceRotation % 360.0) + 360.0) % 360.0
+    $expectedWidth = $SourceInfo.Width
+    $expectedHeight = $SourceInfo.Height
+    $expectedRotation = $normalizedSourceRotation
+    if ($RotationMode -eq 'physical') {
+        if ($AppliedRotation -in @(90, 270)) {
+            $expectedWidth = $SourceInfo.Height
+            $expectedHeight = $SourceInfo.Width
+        }
+        $expectedRotation = 0.0
+    } elseif ($RotationMode -eq 'metadata') {
+        $expectedRotation = $AppliedRotation
+    }
+
+    if ($expectedWidth -ne $OutputInfo.Width -or $expectedHeight -ne $OutputInfo.Height) {
+        $errors.Add("Resolution mismatch: expected ${expectedWidth}x${expectedHeight}, got $($OutputInfo.Width)x$($OutputInfo.Height)")
+    }
+
+    $normalizedOutputRotation = (($outputRotation % 360.0) + 360.0) % 360.0
+    $rotationDifference = [math]::Abs($expectedRotation - $normalizedOutputRotation)
+    $rotationDifference = [math]::Min($rotationDifference, 360.0 - $rotationDifference)
+    if ($rotationDifference -gt $RotationTolerance) {
+        $errors.Add("Rotation mismatch: expected $expectedRotation, got $normalizedOutputRotation")
     }
 
     if ($null -ne $SourceInfo.Fps -and $null -ne $OutputInfo.Fps) {

@@ -28,6 +28,10 @@
                    "mode":  "aac",
                    "aacBitrateKbps":  "source"
                },
+    "advanced":  {
+                     "rotationMode":  "none",
+                     "rotationDegrees":  0
+                 },
     "dates":  {
     "timezoneMode":  "sourceOrZone",
     "defaultTimezone":  "Europe/Moscow",

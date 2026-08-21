@@ -218,6 +218,25 @@ function Import-VideoArchiveConfig {
         }
     }
 
+    $advancedConfig = Get-OptionalJsonPropertyValue -Object $config -Name 'advanced'
+    if ($null -eq $advancedConfig) {
+        $advancedConfig = [pscustomobject]@{ rotationMode = 'none'; rotationDegrees = 0 }
+    }
+    if ($null -eq $advancedConfig.PSObject.Properties['rotationMode']) { Add-Member -InputObject $advancedConfig -NotePropertyName rotationMode -NotePropertyValue 'none' }
+    if ($null -eq $advancedConfig.PSObject.Properties['rotationDegrees']) { Add-Member -InputObject $advancedConfig -NotePropertyName rotationDegrees -NotePropertyValue 0 }
+    $advancedConfig.rotationMode = ([string]$advancedConfig.rotationMode).ToLowerInvariant()
+    if ($advancedConfig.rotationMode -notin @('none', 'metadata', 'physical')) {
+        throw "Unsupported advanced.rotationMode '$($advancedConfig.rotationMode)'. Expected 'none', 'metadata', or 'physical'."
+    }
+    $rotationDegrees = 0
+    if (-not [int]::TryParse([string]$advancedConfig.rotationDegrees, [ref]$rotationDegrees) -or $rotationDegrees -notin @(0, 90, 180, 270)) {
+        throw 'advanced.rotationDegrees must be 0, 90, 180, or 270.'
+    }
+    $advancedConfig.rotationDegrees = $rotationDegrees
+    if ($advancedConfig.rotationMode -ne 'none' -and $rotationDegrees -eq 0) {
+        $advancedConfig.rotationMode = 'none'
+    }
+
     [pscustomobject]@{
         ProjectRoot = $resolvedRoot
         AppName = $config.appName
@@ -249,6 +268,7 @@ function Import-VideoArchiveConfig {
         }
         Audio = $audioConfig
         Dates = $dateConfig
+        Advanced = $advancedConfig
         Encoder = if ($null -ne $config.encoder) {
             if ($null -eq $config.encoder.PSObject.Properties['defaultBackend']) {
                 Add-Member -InputObject $config.encoder -NotePropertyName defaultBackend -NotePropertyValue 'auto'

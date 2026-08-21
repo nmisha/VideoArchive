@@ -531,6 +531,32 @@ Describe 'Validator' {
         ($result.Errors -join ' | ') | Should Match 'strict date mode'
     }
 
+    It 'accepts swapped dimensions and cleared metadata after physical rotation' {
+        $sourceFile = Join-Path $tempRoot 'physical-source.mp4'
+        $outputFile = Join-Path $tempRoot 'physical-output.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+        $sourceInfo = [pscustomobject]@{ Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8; Transfer = $null; Primaries = $null; Matrix = $null; Codec = 'AVC'; AudioTrackCount = 0; AudioCodec = $null; AudioTracks = @() }
+        $outputInfo = [pscustomobject]@{ Width = 1080; Height = 1920; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8; Transfer = $null; Primaries = $null; Matrix = $null; Codec = 'HEVC'; AudioTrackCount = 0; AudioCodec = $null; AudioTracks = @() }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -RotationMode physical -AppliedRotation 90
+
+        $result.Success | Should Be $true
+    }
+
+    It 'accepts unchanged dimensions and a composed metadata rotation' {
+        $sourceFile = Join-Path $tempRoot 'metadata-source.mp4'
+        $outputFile = Join-Path $tempRoot 'metadata-output.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+        $sourceInfo = [pscustomobject]@{ Width = 1920; Height = 1080; Fps = 25; Rotation = 90; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8; Transfer = $null; Primaries = $null; Matrix = $null; Codec = 'HEVC'; AudioTrackCount = 0; AudioCodec = $null; AudioTracks = @() }
+        $outputInfo = [pscustomobject]@{ Width = 1920; Height = 1080; Fps = 25; Rotation = 180; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8; Transfer = $null; Primaries = $null; Matrix = $null; Codec = 'HEVC'; AudioTrackCount = 0; AudioCodec = $null; AudioTracks = @() }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -RotationMode metadata -AppliedRotation 180
+
+        $result.Success | Should Be $true
+    }
+
     It 'treats missing rotation and zero rotation as equivalent' {
         $sourceFile = Join-Path $tempRoot 'source_rotation_default.mp4'
         $outputFile = Join-Path $tempRoot 'output_rotation_zero.mp4'

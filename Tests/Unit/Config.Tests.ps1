@@ -106,6 +106,8 @@ Describe 'Config hardware detection' {
             $config.Audio.aacBitrateKbps | Should Be 256
             $config.Dates.defaultTimezone | Should Be 'Europe/Moscow'
             $config.Dates.unknownTimezonePolicy | Should Be 'keepLocal'
+            $config.Advanced.rotationMode | Should Be 'none'
+            $config.Advanced.rotationDegrees | Should Be 0
             $config.SmartSkip.encodeSmallModernFiles | Should Be $false
             (@($config.SmartSkip.legacySourceExtensions) -contains '.mts') | Should Be $true
 

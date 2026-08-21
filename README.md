@@ -25,6 +25,7 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Supports `-EncoderBackend auto|nvenc|qsv|amf|software`.
 - Supports `-OutputCodec auto|hevc|av1`.
+- Supports Advanced rotation in metadata-only and physical modes.
 - Supports config-driven encoder choice prompts for `auto` mode.
 - Includes a desktop WPF GUI with queue management, preset editing, and log history browsing.
 - Validates encoded files before accepting them.
@@ -112,6 +113,36 @@ Audio behavior is configured independently:
 - `aacBitrateKbps` accepts a positive number or `"source"`. In `"source"` mode, each converted track uses its own source bitrate reported by MediaInfo; if that bitrate is unavailable, VideoArchive uses 256 kbps.
 
 The selective AAC rule applies to NVEncC/QSVEncC/VCEEncC and the FFmpeg software backend. Audio track count and channel count remain validated.
+
+## Advanced rotation
+
+Rotation can be selected in the GUI under **Advanced — Rotation**, passed on the command line, or configured in `config.json`:
+
+```json
+"advanced": {
+  "rotationMode": "none",
+  "rotationDegrees": 0
+}
+```
+
+- `none`: no additional rotation.
+- `metadata`: copies the source file without re-encoding video or audio and changes only the display rotation matrix. This mode supports MP4, MOV, and M4V sources and preserves the source extension.
+- `physical`: physically rotates decoded pixels and re-encodes the video. Audio follows the normal audio policy. The output rotation metadata is cleared.
+- `rotationDegrees`: clockwise additional rotation: `0`, `90`, `180`, or `270`. Existing source rotation is composed with the requested angle.
+
+When `VideoArchive.cmd` is started without command-line parameters, the four presets are followed by item `5. Advanced`. Its current operation is `Video rotation`: select metadata or physical rotation and an angle, enter the source file path, and the transformation starts with the default preset.
+
+Smart Skip cannot suppress a requested rotation, and the rotated output is protected from the minimum-savings discard rule. An already existing valid output is still skipped unless `-Force` or `-NoSmartSkip` is used.
+
+Examples:
+
+```powershell
+# Change only the MP4/MOV display orientation; streams remain untouched
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\Video\clip.mp4" -RotationMode metadata -RotationDegrees 90
+
+# Rotate pixels clockwise and encode the archive copy
+powershell -NoProfile -ExecutionPolicy Bypass -File .\VideoArchive.ps1 -InputPath "D:\Video\clip.mts" -RotationMode physical -RotationDegrees 270
+```
 
 ## Project structure
 

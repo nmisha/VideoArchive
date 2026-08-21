@@ -86,6 +86,7 @@ $script:QueueRunning = $false
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Preset" Margin="0,0,10,8" VerticalAlignment="Center"/>
@@ -112,6 +113,14 @@ $script:QueueRunning = $false
                                 <Button x:Name="BtnStartQueue" Content="Start Queue" Width="108" Margin="0,0,10,0" Background="#166534" Foreground="White"/>
                                 <Button x:Name="BtnStopCurrent" Content="Stop Current" Width="108" Margin="0,0,10,0" Background="#991B1B" Foreground="White"/>
                                 <Button x:Name="BtnOpenLogsFolder" Content="Open Logs" Width="96" Background="#1D4ED8" Foreground="White"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.ColumnSpan="8" Orientation="Horizontal" Margin="0,10,0,0">
+                                <TextBlock Text="Advanced — Rotation" Margin="0,0,12,0" VerticalAlignment="Center" Foreground="#A5F3FC" FontWeight="SemiBold"/>
+                                <TextBlock Text="Mode" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="CmbRotationMode" Width="110" Margin="0,0,16,0" Background="#0F172A" Foreground="#E5E7EB"/>
+                                <TextBlock Text="Clockwise" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="CmbRotationDegrees" Width="80" Margin="0,0,12,0" Background="#0F172A" Foreground="#E5E7EB"/>
+                                <TextBlock Text="metadata keeps streams; physical re-encodes video" VerticalAlignment="Center" Foreground="#94A3B8"/>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -143,6 +152,7 @@ $script:QueueRunning = $false
                                     <DataGridTextColumn Header="Preset" Binding="{Binding PresetName}" Width="90"/>
                                     <DataGridTextColumn Header="Backend" Binding="{Binding EncoderBackend}" Width="90"/>
                                     <DataGridTextColumn Header="Codec" Binding="{Binding OutputCodec}" Width="80"/>
+                                    <DataGridTextColumn Header="Rotation" Binding="{Binding Rotation}" Width="120"/>
                                     <DataGridTextColumn Header="Progress" Binding="{Binding ProgressPercent}" Width="80"/>
                                     <DataGridTextColumn Header="Flags" Binding="{Binding Flags}" Width="160"/>
                                     <DataGridTextColumn Header="Input Path" Binding="{Binding InputPath}" Width="*"/>
@@ -360,7 +370,7 @@ $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
 $namedControls = @(
-    'TxtHeaderStatus', 'TxtHeaderLog', 'CmbPreset', 'CmbBackend', 'CmbCodec', 'ChkForce', 'ChkNoSmartSkip',
+    'TxtHeaderStatus', 'TxtHeaderLog', 'CmbPreset', 'CmbBackend', 'CmbCodec', 'CmbRotationMode', 'CmbRotationDegrees', 'ChkForce', 'ChkNoSmartSkip',
     'ChkDryRun', 'ChkResume', 'CmbResumeMode', 'BtnAddFiles', 'BtnAddFolder', 'BtnAddSelection', 'TxtInputPath',
     'BtnRemoveSelected', 'BtnClearQueue', 'BtnStartQueue', 'BtnStopCurrent', 'BtnOpenLogsFolder', 'GridQueue',
     'BarCurrentJob', 'TxtDashboardStatus', 'TxtDashboardCurrent', 'TxtDashboardTelemetry', 'TxtDashboardLog',
@@ -556,6 +566,8 @@ function Add-QueueItemFromPath {
             -PresetName ([string]$script:CmbPreset.SelectedItem) `
             -EncoderBackend ([string]$script:CmbBackend.SelectedItem) `
             -OutputCodec ([string]$script:CmbCodec.SelectedItem) `
+            -RotationMode ([string]$script:CmbRotationMode.SelectedItem) `
+            -RotationDegrees ([int]$script:CmbRotationDegrees.SelectedItem) `
             -Force:([bool]$script:ChkForce.IsChecked) `
             -NoSmartSkip:([bool]$script:ChkNoSmartSkip.IsChecked) `
             -DryRun:([bool]$script:ChkDryRun.IsChecked) `
@@ -731,6 +743,8 @@ function Stop-CurrentQueueRun {
 $backendItems = @('auto', 'nvenc', 'qsv', 'amf', 'software')
 $codecItems = @('hevc', 'auto', 'av1')
 $resumeModeItems = @('unfinished', 'failed', 'all')
+$rotationModeItems = @('none', 'metadata', 'physical')
+$rotationDegreeItems = @(0, 90, 180, 270)
 
 $CmbBackend.ItemsSource = $backendItems
 $CmbBackend.SelectedItem = [string]$config.Encoder.defaultBackend
@@ -739,6 +753,10 @@ $defaultCodecForGui = if ([string]::IsNullOrWhiteSpace([string]$config.Encoder.d
 $CmbCodec.SelectedItem = $defaultCodecForGui
 $CmbResumeMode.ItemsSource = $resumeModeItems
 $CmbResumeMode.SelectedItem = 'unfinished'
+$CmbRotationMode.ItemsSource = $rotationModeItems
+$CmbRotationMode.SelectedItem = [string]$config.Advanced.rotationMode
+$CmbRotationDegrees.ItemsSource = $rotationDegreeItems
+$CmbRotationDegrees.SelectedItem = [int]$config.Advanced.rotationDegrees
 
 Refresh-PresetList
 Refresh-HistoryList
