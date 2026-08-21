@@ -6,6 +6,8 @@ Describe 'DecisionEngine' {
             enabled = $true
             skipAv1 = $true
             skipSmallFilesMb = 50
+            encodeSmallModernFiles = $false
+            legacySourceExtensions = @('.mts', '.m2ts', '.avi', '.wmv', '.webm')
             skipHevcBelowMbps1080p = 10
             skipHevcBelowMbps4k = 35
             skipHevcBelowMbps8k = 80
@@ -80,5 +82,67 @@ Describe 'DecisionEngine' {
 
         $decision.Action | Should Be 'Encode'
         $decision.Reason | Should Be 'Force enabled'
+    }
+
+    It 'always encodes a small legacy MTS source' {
+        $videoInfo = [pscustomobject]@{
+            Path = 'D:\Camera\20120101003906.MTS'; Codec = 'AVC'; IsHdr = $false
+            Width = 1920; Height = 1080; BitrateMbps = 18; SourceSizeMb = 39.56
+        }
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath $videoInfo.Path -OutputFile 'D:\Out\file.mp4' -SmartSkip $smartSkip
+
+        $decision.Action | Should Be 'Encode'
+        $decision.Reason | Should Match 'Legacy source container .mts'
+        $decision.ProtectOutputFromSavingsDiscard | Should Be $true
+    }
+
+    It 'skips a small modern source by default' {
+        $videoInfo = [pscustomobject]@{
+            Path = 'D:\Camera\small.mp4'; Codec = 'AVC'; IsHdr = $false
+            Width = 1920; Height = 1080; BitrateMbps = 8; SourceSizeMb = 20
+        }
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile 'D:\Out\file.mp4' -SmartSkip $smartSkip
+
+        $decision.Action | Should Be 'Skip'
+        $decision.Reason | Should Match 'smaller than 50 MB'
+    }
+
+    It 'encodes a small modern source when enabled' {
+        $videoInfo = [pscustomobject]@{
+            Path = 'D:\Camera\small.mp4'; Codec = 'AVC'; IsHdr = $false
+            Width = 1920; Height = 1080; BitrateMbps = 8; SourceSizeMb = 20
+        }
+        $policy = $smartSkip.PSObject.Copy()
+        $policy.encodeSmallModernFiles = $true
+
+        $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile 'D:\Out\file.mp4' -SmartSkip $policy
+
+        $decision.Action | Should Be 'Encode'
+        $decision.Reason | Should Match 'Small modern source encoding enabled'
+        $decision.ProtectOutputFromSavingsDiscard | Should Be $true
+    }
+
+    It 're-encodes an existing MKV when its required sidecar is missing' {
+        $outputFile = Join-Path $env:TEMP ('existing_' + [guid]::NewGuid().ToString('N') + '.mkv')
+        try {
+            Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+            $videoInfo = [pscustomobject]@{
+                Width = 1920; Height = 1080; Codec = 'AVC'; IsHdr = $false; HdrType = 'SDR'; BitrateMbps = 20; SourceSizeMb = 100
+            }
+            $smartSkip = [pscustomobject]@{
+                enabled = $true; skipIfOutputExists = $true; skipAv1 = $false; skipSmallFilesMb = 0
+                skipHevcBelowMbps8k = 60; skipHevcBelowMbps4k = 30; skipHevcBelowMbps1080p = 10
+            }
+            $sidecarPath = [System.IO.Path]::ChangeExtension($outputFile, '.metadata.json')
+
+            $result = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $outputFile -RequiredSidecarFile $sidecarPath -SmartSkip $smartSkip
+
+            $result.Action | Should Be 'Encode'
+            $result.Reason | Should Match 'sidecar is missing'
+        } finally {
+            Remove-Item -LiteralPath $outputFile -Force -ErrorAction SilentlyContinue
+        }
     }
 }

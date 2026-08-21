@@ -26,7 +26,11 @@ function New-CaptureDateResult {
         [Nullable[datetime]]$DateTime,
         [string]$Source,
         [string]$Pattern,
-        [string[]]$Warnings
+        [string[]]$Warnings,
+        [Nullable[datetimeoffset]]$DateTimeOffset,
+        [bool]$HasTimezone = $false,
+        [string]$TimezoneSource = 'Unknown',
+        [string]$TimezoneId
     )
 
     [pscustomobject]@{
@@ -35,14 +39,19 @@ function New-CaptureDateResult {
         Source = $Source
         Pattern = $Pattern
         Warnings = @($Warnings)
+        DateTimeOffset = $DateTimeOffset
+        HasTimezone = $HasTimezone
+        Offset = if ($HasTimezone -and $null -ne $DateTimeOffset) { $DateTimeOffset.ToString('zzz') } else { $null }
+        TimezoneSource = $TimezoneSource
+        TimezoneId = $TimezoneId
     }
 }
 
-function ConvertTo-NullableDateTime {
+function ConvertTo-CaptureDateValue {
     param([string]$Value)
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $null
+        return [pscustomobject]@{ DateTime = $null; DateTimeOffset = $null; HasTimezone = $false }
     }
 
     $text = $Value.Trim()
@@ -50,16 +59,85 @@ function ConvertTo-NullableDateTime {
         $text = $text -replace '^(\d{4}):(\d{2}):(\d{2})\s+', '$1-$2-$3T'
     }
 
-    try {
-        return [datetimeoffset]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture).DateTime
-    } catch {
+    $hasExplicitTimezone = $text -match '(?:Z|[+\-]\d{2}:?\d{2})$'
+    if ($hasExplicitTimezone) {
+        try {
+            $dateWithOffset = [datetimeoffset]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)
+            return [pscustomobject]@{ DateTime = $dateWithOffset.DateTime; DateTimeOffset = $dateWithOffset; HasTimezone = $true }
+        } catch {
+        }
     }
 
     try {
-        return [datetime]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)
+        $localDate = [datetime]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)
+        return [pscustomobject]@{ DateTime = [datetime]::SpecifyKind($localDate, [DateTimeKind]::Unspecified); DateTimeOffset = $null; HasTimezone = $false }
     } catch {
+        return [pscustomobject]@{ DateTime = $null; DateTimeOffset = $null; HasTimezone = $false }
+    }
+}
+
+function Get-CaptureDateTimeZone {
+    param([psobject]$DateConfig)
+
+    if ($null -eq $DateConfig -or $null -eq $DateConfig.PSObject.Properties['defaultTimezone']) {
         return $null
     }
+
+    $configuredId = [string]$DateConfig.defaultTimezone
+    if ([string]::IsNullOrWhiteSpace($configuredId)) {
+        return $null
+    }
+
+    $candidateIds = @($configuredId)
+    if ($configuredId -eq 'Europe/Moscow') { $candidateIds += 'Russian Standard Time' }
+    if ($configuredId -eq 'Russian Standard Time') { $candidateIds += 'Europe/Moscow' }
+    foreach ($candidateId in $candidateIds) {
+        try { return [TimeZoneInfo]::FindSystemTimeZoneById($candidateId) } catch { }
+    }
+
+    return $null
+}
+
+function Add-CaptureDateTimezone {
+    param(
+        [Parameter(Mandatory)][psobject]$Result,
+        [psobject]$DateConfig
+    )
+
+    if (-not $Result.Success -or $Result.HasTimezone) {
+        return $Result
+    }
+
+    $mode = if ($null -ne $DateConfig -and $null -ne $DateConfig.PSObject.Properties['timezoneMode']) { [string]$DateConfig.timezoneMode } else { 'sourceOnly' }
+    if ($mode -ne 'sourceOrZone') {
+        $Result.Warnings = @($Result.Warnings) + 'Capture date has no UTC offset; local wall-clock time was preserved without UTC conversion.'
+        return $Result
+    }
+
+    $timeZone = Get-CaptureDateTimeZone -DateConfig $DateConfig
+    if ($null -eq $timeZone) {
+        $Result.Warnings = @($Result.Warnings) + 'Capture date has no UTC offset and the configured time zone is unavailable; local wall-clock time was preserved.'
+        return $Result
+    }
+
+    $wallDate = [datetime]::SpecifyKind($Result.DateTime, [DateTimeKind]::Unspecified)
+    if ($timeZone.IsInvalidTime($wallDate)) {
+        $Result.Warnings = @($Result.Warnings) + "Capture date falls into an invalid local-time interval for '$($timeZone.Id)'; local wall-clock time was preserved."
+        return $Result
+    }
+    if ($timeZone.IsAmbiguousTime($wallDate)) {
+        $Result.Warnings = @($Result.Warnings) + "Capture date is ambiguous in '$($timeZone.Id)'; local wall-clock time was preserved without choosing an offset."
+        return $Result
+    }
+
+    $offset = $timeZone.GetUtcOffset($wallDate)
+    $dateWithOffset = [datetimeoffset]::new($wallDate, $offset)
+    $Result.DateTimeOffset = $dateWithOffset
+    $Result.HasTimezone = $true
+    $Result.Offset = $dateWithOffset.ToString('zzz')
+    $Result.TimezoneSource = 'ConfiguredZone'
+    $Result.TimezoneId = $timeZone.Id
+    return $Result
 }
 
 function Test-IsDateOnlyString {
@@ -145,7 +223,9 @@ function Get-VideoDateFromMetadata {
         [Parameter(Mandatory)]
         [string]$ExifToolPath,
 
-        [Nullable[datetime]]$FileNameDate
+        [Nullable[datetime]]$FileNameDate,
+
+        [psobject]$DateConfig
     )
 
     $args = @(
@@ -187,11 +267,14 @@ function Get-VideoDateFromMetadata {
         @{ Name = 'Keys:CreationDate'; Value = (Get-ExifJsonValue -Object $item -Name 'Keys:CreationDate') }
     )
 
-    foreach ($candidate in $candidates) {
+    $orderedCandidates = @($candidates | Where-Object { [string]$_.Value -match '(?:Z|[+\-]\d{2}:?\d{2})$' })
+    $orderedCandidates += @($candidates | Where-Object { [string]$_.Value -notmatch '(?:Z|[+\-]\d{2}:?\d{2})$' })
+    foreach ($candidate in $orderedCandidates) {
         $rawValue = [string]$candidate.Value
-        $parsedDate = ConvertTo-NullableDateTime -Value $rawValue
-        if (Test-IsValidCaptureDate -Date $parsedDate -RawValue $rawValue -FileNameDate $FileNameDate) {
-            return New-CaptureDateResult -Success $true -DateTime $parsedDate -Source 'Metadata' -Pattern $candidate.Name -Warnings @()
+        $parsedDate = ConvertTo-CaptureDateValue -Value $rawValue
+        if (Test-IsValidCaptureDate -Date $parsedDate.DateTime -RawValue $rawValue -FileNameDate $FileNameDate) {
+            $result = New-CaptureDateResult -Success $true -DateTime $parsedDate.DateTime -Source 'Metadata' -Pattern $candidate.Name -Warnings @() -DateTimeOffset $parsedDate.DateTimeOffset -HasTimezone:$parsedDate.HasTimezone -TimezoneSource $(if ($parsedDate.HasTimezone) { 'SourceMetadata' } else { 'Unknown' })
+            return Add-CaptureDateTimezone -Result $result -DateConfig $DateConfig
         }
     }
 
@@ -214,6 +297,10 @@ function Get-DateMatchResult {
     $date = & $Parser $match
     if ($null -eq $date) {
         return New-CaptureDateResult -Success $false -DateTime $null -Source 'None' -Pattern $PatternName -Warnings @("Filename matched pattern '$PatternName' but contains an invalid date.")
+    }
+
+    if ($date -is [datetimeoffset]) {
+        return New-CaptureDateResult -Success $true -DateTime $date.DateTime -Source 'FileName' -Pattern $PatternName -Warnings @() -DateTimeOffset $date -HasTimezone:$true -TimezoneSource 'FileName'
     }
 
     return New-CaptureDateResult -Success $true -DateTime $date -Source 'FileName' -Pattern $PatternName -Warnings @()
@@ -302,7 +389,7 @@ function Get-VideoDateFromFileName {
                         ('{0}-{1}-{2}T{3}:{4}:{5}{6}' -f $m.Groups['y'].Value, $m.Groups['m'].Value, $m.Groups['d'].Value, $m.Groups['hh'].Value, $m.Groups['mm'].Value, $m.Groups['ss'].Value, $offsetText),
                         'yyyy-MM-ddTHH:mm:ssK',
                         [System.Globalization.CultureInfo]::InvariantCulture
-                    ).LocalDateTime
+                    )
                 } catch {
                     return $null
                 }
@@ -363,8 +450,10 @@ function Resolve-VideoCaptureDate {
         [psobject]$DateConfig
     )
 
-    $fileNameResult = Get-VideoDateFromFileName -Path $Path -DefaultTimezoneOffset ([string]$DateConfig.defaultTimezoneOffset)
-    $metadataResult = Get-VideoDateFromMetadata -Path $Path -ExifToolPath $ExifToolPath -FileNameDate $fileNameResult.DateTime
+    $legacyOffset = if ($null -ne $DateConfig.PSObject.Properties['defaultTimezoneOffset']) { [string]$DateConfig.defaultTimezoneOffset } else { '+00:00' }
+    $fileNameResult = Get-VideoDateFromFileName -Path $Path -DefaultTimezoneOffset $legacyOffset
+    $fileNameResult = Add-CaptureDateTimezone -Result $fileNameResult -DateConfig $DateConfig
+    $metadataResult = Get-VideoDateFromMetadata -Path $Path -ExifToolPath $ExifToolPath -FileNameDate $fileNameResult.DateTime -DateConfig $DateConfig
 
     if ($metadataResult.Success) {
         return $metadataResult
@@ -376,7 +465,7 @@ function Resolve-VideoCaptureDate {
 
     $fileSystemResult = Get-VideoDateFromFileSystem -Path $Path -FallbackMode ([string]$DateConfig.fileDateFallbackMode)
     if ($fileSystemResult.Success) {
-        return $fileSystemResult
+        return Add-CaptureDateTimezone -Result $fileSystemResult -DateConfig $DateConfig
     }
 
     $warnings = @()
@@ -397,6 +486,10 @@ function Set-VideoCaptureDate {
         [Parameter(Mandatory)]
         [datetime]$CaptureDate,
 
+        [Nullable[datetimeoffset]]$CaptureDateTimeOffset,
+
+        [switch]$HasTimezone,
+
         [Parameter(Mandatory)]
         [string]$Source,
 
@@ -414,20 +507,36 @@ function Set-VideoCaptureDate {
         return $null
     }
 
-    $dateText = $CaptureDate.ToString('yyyy:MM:dd HH:mm:ss')
-    $args = @(
-        '-overwrite_original'
-        "-QuickTime:CreateDate=$dateText"
-        "-QuickTime:ModifyDate=$dateText"
-        "-QuickTime:TrackCreateDate=$dateText"
-        "-QuickTime:TrackModifyDate=$dateText"
-        "-QuickTime:MediaCreateDate=$dateText"
-        "-QuickTime:MediaModifyDate=$dateText"
-        "-Keys:CreationDate=$dateText"
-        "-XMP:CreateDate=$dateText"
-        "-XMP:ModifyDate=$dateText"
-        $Path
-    )
+    $localDateText = $CaptureDate.ToString('yyyy:MM:dd HH:mm:ss')
+    $args = @('-overwrite_original')
+    if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) {
+        $utcDateText = $CaptureDateTimeOffset.UtcDateTime.ToString('yyyy:MM:dd HH:mm:ss')
+        $offsetDateText = $CaptureDateTimeOffset.ToString('yyyy:MM:dd HH:mm:sszzz')
+        $args += @(
+            "-QuickTime:CreateDate=$utcDateText"
+            "-QuickTime:ModifyDate=$utcDateText"
+            "-QuickTime:TrackCreateDate=$utcDateText"
+            "-QuickTime:TrackModifyDate=$utcDateText"
+            "-QuickTime:MediaCreateDate=$utcDateText"
+            "-QuickTime:MediaModifyDate=$utcDateText"
+            "-Keys:CreationDate=$offsetDateText"
+            "-XMP:CreateDate=$offsetDateText"
+            "-XMP:ModifyDate=$offsetDateText"
+        )
+    } else {
+        $args += @(
+            '-QuickTime:CreateDate='
+            '-QuickTime:ModifyDate='
+            '-QuickTime:TrackCreateDate='
+            '-QuickTime:TrackModifyDate='
+            '-QuickTime:MediaCreateDate='
+            '-QuickTime:MediaModifyDate='
+            "-Keys:CreationDate=$localDateText"
+            "-XMP:CreateDate=$localDateText"
+            "-XMP:ModifyDate=$localDateText"
+        )
+    }
+    $args += $Path
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {

@@ -104,6 +104,17 @@ function ConvertTo-BitrateMbps {
     return [math]::Round($bitrate, 2)
 }
 
+function ConvertTo-BitrateKbps {
+    param([string]$Value)
+
+    $bitrate = ConvertTo-NullableDouble -Value $Value
+    if ($null -eq $bitrate -or $bitrate -le 0) {
+        return $null
+    }
+
+    return [int][math]::Round($bitrate / 1000)
+}
+
 function Get-HdrClassification {
     param(
         [string]$Transfer,
@@ -187,6 +198,7 @@ function ConvertFrom-MediaInfoJson {
                 Codec = ConvertTo-NormalizedAudioCodec (Get-TrackValue -Track $audioTrack -Names @('Format', 'CodecID', 'InternetMediaType'))
                 Channels = ConvertTo-NullableInt (Get-TrackValue -Track $audioTrack -Names @('Channel(s)', 'Channel_s_', 'Channels'))
                 SamplingRate = ConvertTo-NullableInt (Get-TrackValue -Track $audioTrack -Names @('SamplingRate', 'SamplingRate_Original'))
+                BitrateKbps = ConvertTo-BitrateKbps (Get-TrackValue -Track $audioTrack -Names @('BitRate', 'BitRate_Nominal'))
             }
         }
     )
@@ -231,6 +243,7 @@ function ConvertFrom-MediaInfoJson {
         AudioCodec = if ($audioInfo.Count -gt 0) { $audioInfo[0].Codec } else { $null }
         AudioChannels = if ($audioInfo.Count -gt 0) { $audioInfo[0].Channels } else { $null }
         AudioSamplingRate = if ($audioInfo.Count -gt 0) { $audioInfo[0].SamplingRate } else { $null }
+        AudioBitrateKbps = if ($audioInfo.Count -gt 0) { $audioInfo[0].BitrateKbps } else { $null }
         DurationSeconds = $durationSeconds
         SourceSizeBytes = $SourceSizeBytes
         SourceSizeMb = if ($null -ne $SourceSizeBytes) { [math]::Round($SourceSizeBytes / 1MB, 2) } else { $null }

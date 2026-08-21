@@ -29,11 +29,20 @@ Decision order:
 1. `-Force` always encodes.
 2. `-NoSmartSkip` or disabled Smart Skip encodes.
 3. Existing output can be skipped when `skipIfOutputExists=true`.
-4. AV1 can be skipped.
-5. Small files can be skipped.
-6. HEVC bitrate thresholds can skip already efficient files.
-7. Protected HDR formats such as `HDR Vivid`, `Dolby Vision`, and `HDR10+` are not silently skipped by low-bitrate HEVC rules.
-8. Non-HEVC codecs default to encode.
+4. Sources listed in `legacySourceExtensions` are always transcoded, regardless of size, and their output is protected from the minimum-savings discard rule.
+5. AV1 can be skipped for non-legacy sources.
+6. Small modern files are skipped by default, or encoded when `encodeSmallModernFiles=true`; explicitly encoded small outputs are protected from the minimum-savings discard rule.
+7. HEVC bitrate thresholds can skip already efficient files.
+8. Protected HDR formats such as `HDR Vivid`, `Dolby Vision`, and `HDR10+` are not silently skipped by low-bitrate HEVC rules.
+9. Non-HEVC codecs default to encode.
+
+Relevant `smartskip.json` settings:
+
+```json
+"skipSmallFilesMb": 50,
+"encodeSmallModernFiles": false,
+"legacySourceExtensions": [".mts", ".m2ts", ".avi", ".wmv", ".webm"]
+```
 
 ## Scope boundary
 

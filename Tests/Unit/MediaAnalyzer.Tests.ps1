@@ -27,7 +27,8 @@ Describe 'MediaAnalyzer' {
       {
         "@type": "Audio",
         "Format": "AAC",
-        "Channel(s)": "2"
+        "Channel(s)": "2",
+        "BitRate": "448000"
       }
     ]
   }
@@ -50,6 +51,8 @@ Describe 'MediaAnalyzer' {
         $result.AudioTrackCount | Should Be 1
         $result.AudioTracks[0].Codec | Should Be 'AAC'
         $result.AudioTracks[0].Channels | Should Be 2
+        $result.AudioTracks[0].BitrateKbps | Should Be 448
+        $result.AudioBitrateKbps | Should Be 448
     }
 
     It 'classifies BT.2020 plus HLG as HLG' {

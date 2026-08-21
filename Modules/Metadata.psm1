@@ -51,39 +51,17 @@ function ConvertTo-NormalizedMetadataDate {
         $text = $text -replace '^(\d{4}):(\d{2}):(\d{2})\s+', '$1-$2-$3T'
     }
 
+    if ($text -match '(?:Z|[+\-]\d{2}:?\d{2})$') {
+        try {
+            return ([datetimeoffset]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)).ToString('yyyy-MM-ddTHH:mm:sszzz')
+        } catch { }
+    }
+
     try {
         return ([datetime]::Parse($text, [System.Globalization.CultureInfo]::InvariantCulture)).ToString('yyyy-MM-ddTHH:mm:ss')
-    } catch {
-    }
+    } catch { }
 
     return $text
-}
-
-function ConvertTo-TimezoneAdjustedDate {
-    param(
-        [Parameter(Mandatory)]
-        [datetime]$DateTime,
-
-        [string]$Offset = '+00:00'
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Offset) -or $Offset -eq '+00:00') {
-        return $DateTime
-    }
-
-    $match = [regex]::Match($Offset.Trim(), '^(?<sign>[+\-])(?<hours>\d{2}):(?<minutes>\d{2})$')
-    if (-not $match.Success) {
-        return $DateTime
-    }
-
-    $hours = [int]$match.Groups['hours'].Value
-    $minutes = [int]$match.Groups['minutes'].Value
-    $timeSpan = New-TimeSpan -Hours $hours -Minutes $minutes
-    if ($match.Groups['sign'].Value -eq '-') {
-        $timeSpan = -$timeSpan
-    }
-
-    return $DateTime.Add($timeSpan)
 }
 
 function ConvertFrom-ExifToolJson {
@@ -109,12 +87,10 @@ function ConvertFrom-ExifToolJson {
     $exifDateTimeOriginal = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('EXIF:DateTimeOriginal', 'DateTimeOriginal'))
     $xmpCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('XMP:CreateDate'))
     $keysCreationDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('Keys:CreationDate', 'CreationDate'))
-    $dateTaken = $exifDateTimeOriginal
-    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeMediaCreateDate }
-    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeCreateDate }
-    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $quickTimeTrackCreateDate }
-    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $xmpCreateDate }
-    if ([string]::IsNullOrWhiteSpace($dateTaken)) { $dateTaken = $keysCreationDate }
+    $dateCandidates = @($exifDateTimeOriginal, $keysCreationDate, $xmpCreateDate, $quickTimeMediaCreateDate, $quickTimeCreateDate, $quickTimeTrackCreateDate) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $dateTaken = $dateCandidates | Where-Object { [string]$_ -match '(?:Z|[+\-]\d{2}:?\d{2})$' } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace([string]$dateTaken)) { $dateTaken = $dateCandidates | Select-Object -First 1 }
 
     [pscustomobject]@{
         Path = $Path
@@ -145,6 +121,10 @@ function Set-FileSystemTimestamps {
 
         [Nullable[datetime]]$CaptureDate,
 
+        [Nullable[datetimeoffset]]$CaptureDateTimeOffset,
+
+        [switch]$HasTimezone,
+
         [string]$CaptureDateSource = 'None',
 
         [string]$CaptureDateOffset = '+00:00'
@@ -154,10 +134,15 @@ function Set-FileSystemTimestamps {
     $destination = Get-Item -LiteralPath $DestinationFile
 
     if ($FileTimestampMode -eq 'captureDate' -and $null -ne $CaptureDate) {
-        $targetDate = $CaptureDate
-        if ($CaptureDateSource -eq 'Metadata') {
-            $targetDate = ConvertTo-TimezoneAdjustedDate -DateTime $CaptureDate -Offset $CaptureDateOffset
+        if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) {
+            $targetUtc = $CaptureDateTimeOffset.UtcDateTime
+            $destination.CreationTimeUtc = $targetUtc
+            $destination.LastWriteTimeUtc = $targetUtc
+            $destination.LastAccessTimeUtc = $targetUtc
+            return
         }
+
+        $targetDate = [datetime]::SpecifyKind($CaptureDate, [DateTimeKind]::Unspecified)
 
         $destination.CreationTime = $targetDate
         $destination.LastWriteTime = $targetDate
@@ -188,6 +173,10 @@ function Copy-VideoMetadata {
         [string]$FileTimestampMode = 'captureDate',
 
         [Nullable[datetime]]$CaptureDate,
+
+        [Nullable[datetimeoffset]]$CaptureDateTimeOffset,
+
+        [switch]$HasTimezone,
 
         [string]$CaptureDateSource = 'None',
 
@@ -226,7 +215,7 @@ function Copy-VideoMetadata {
     }
 
     if ($PreserveWindowsTimestamps) {
-        Set-FileSystemTimestamps -SourceFile $SourceFile -DestinationFile $DestinationFile -FileTimestampMode $FileTimestampMode -CaptureDate $CaptureDate -CaptureDateSource $CaptureDateSource -CaptureDateOffset $CaptureDateOffset
+        Set-FileSystemTimestamps -SourceFile $SourceFile -DestinationFile $DestinationFile -FileTimestampMode $FileTimestampMode -CaptureDate $CaptureDate -CaptureDateTimeOffset $CaptureDateTimeOffset -HasTimezone:$HasTimezone -CaptureDateSource $CaptureDateSource -CaptureDateOffset $CaptureDateOffset
     }
 
     return $output.Trim()
@@ -272,4 +261,55 @@ function Get-VideoMetadataSnapshot {
     return ConvertFrom-ExifToolJson -ExifToolJson $output -Path $Path
 }
 
-Export-ModuleMember -Function Copy-VideoMetadata, ConvertFrom-ExifToolJson, Get-VideoMetadataSnapshot
+function Get-VideoMetadataSidecarPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$VideoPath
+    )
+
+    return [System.IO.Path]::ChangeExtension($VideoPath, '.metadata.json')
+}
+
+function Write-VideoMetadataSidecar {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourceFile,
+
+        [Parameter(Mandatory)]
+        [string]$OutputFile,
+
+        [Parameter(Mandatory)]
+        [psobject]$CaptureDateResult,
+
+        [psobject]$SourceMetadata
+    )
+
+    $sourceItem = Get-Item -LiteralPath $SourceFile -ErrorAction Stop
+    $sidecarPath = Get-VideoMetadataSidecarPath -VideoPath $OutputFile
+    $sidecar = [pscustomobject][ordered]@{
+        SchemaVersion = 1
+        SourceFile = $sourceItem.FullName
+        OutputFile = [System.IO.Path]::GetFullPath($OutputFile)
+        CaptureDate = if ($CaptureDateResult.Success) { $CaptureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }
+        CaptureDateWithOffset = if ($CaptureDateResult.Success -and $null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and $CaptureDateResult.HasTimezone) { $CaptureDateResult.DateTimeOffset.ToString('yyyy-MM-ddTHH:mm:sszzz') } else { $null }
+        CaptureDateUtc = if ($CaptureDateResult.Success -and $null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and $CaptureDateResult.HasTimezone) { $CaptureDateResult.DateTimeOffset.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ') } else { $null }
+        CaptureDateTimezoneSource = if ($null -ne $CaptureDateResult.PSObject.Properties['TimezoneSource']) { [string]$CaptureDateResult.TimezoneSource } else { 'Unknown' }
+        CaptureDateTimezoneId = if ($null -ne $CaptureDateResult.PSObject.Properties['TimezoneId']) { [string]$CaptureDateResult.TimezoneId } else { $null }
+        CaptureDateSource = [string]$CaptureDateResult.Source
+        CaptureDatePattern = [string]$CaptureDateResult.Pattern
+        CaptureDateWarnings = @($CaptureDateResult.Warnings)
+        SourceDateTaken = if ($null -ne $SourceMetadata) { [string]$SourceMetadata.DateTaken } else { $null }
+        GpsLatitude = if ($null -ne $SourceMetadata) { $SourceMetadata.GpsLatitude } else { $null }
+        GpsLongitude = if ($null -ne $SourceMetadata) { $SourceMetadata.GpsLongitude } else { $null }
+        SourceFileSizeBytes = [long]$sourceItem.Length
+        SourceLastWriteTimeUtc = $sourceItem.LastWriteTimeUtc.ToString('o')
+        GeneratedAtUtc = [datetime]::UtcNow.ToString('o')
+    }
+
+    $sidecar | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $sidecarPath -Encoding UTF8
+    return $sidecarPath
+}
+
+Export-ModuleMember -Function Copy-VideoMetadata, ConvertFrom-ExifToolJson, Get-VideoMetadataSnapshot, Get-VideoMetadataSidecarPath, Write-VideoMetadataSidecar, Set-FileSystemTimestamps

@@ -128,6 +128,22 @@ function Import-VideoArchiveConfig {
     $smartSkip = Read-VideoArchiveJson -Path (Join-Path $resolvedRoot 'smartskip.json')
     $devices = Read-VideoArchiveJson -Path (Join-Path $resolvedRoot 'devices.json')
 
+    if ($null -eq $smartSkip.PSObject.Properties['encodeSmallModernFiles']) {
+        Add-Member -InputObject $smartSkip -NotePropertyName encodeSmallModernFiles -NotePropertyValue $false
+    }
+    if ($null -eq $smartSkip.PSObject.Properties['legacySourceExtensions']) {
+        Add-Member -InputObject $smartSkip -NotePropertyName legacySourceExtensions -NotePropertyValue @('.mts', '.m2ts', '.avi', '.wmv', '.webm')
+    }
+    $normalizedLegacyExtensions = @(
+        foreach ($extension in @($smartSkip.legacySourceExtensions)) {
+            $normalizedExtension = ([string]$extension).Trim().ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($normalizedExtension)) { continue }
+            if (-not $normalizedExtension.StartsWith('.')) { $normalizedExtension = ".${normalizedExtension}" }
+            $normalizedExtension
+        }
+    ) | Select-Object -Unique
+    $smartSkip.legacySourceExtensions = @($normalizedLegacyExtensions)
+
     if ([string]::IsNullOrWhiteSpace($PresetName)) {
         $PresetName = $config.defaultPreset
     }
@@ -136,6 +152,70 @@ function Import-VideoArchiveConfig {
     if ($null -eq $preset) {
         $availablePresets = $presets.PSObject.Properties.Name -join ', '
         throw "Preset '$PresetName' not found. Available presets: $availablePresets"
+    }
+
+    $outputContainer = Get-OptionalJsonPropertyValue -Object $config.output -Name 'container'
+    if ([string]::IsNullOrWhiteSpace([string]$outputContainer)) {
+        $outputContainer = 'mp4'
+    }
+    $outputContainer = ([string]$outputContainer).ToLowerInvariant()
+    if ($outputContainer -notin @('mp4', 'mkv', 'source')) {
+        throw "Unsupported output container '$outputContainer'. Expected 'mp4', 'mkv', or 'source'."
+    }
+
+    $audioConfig = Get-OptionalJsonPropertyValue -Object $config -Name 'audio'
+    if ($null -eq $audioConfig) {
+        $audioConfig = [pscustomobject]@{ mode = 'copy'; aacBitrateKbps = 256 }
+    }
+    if ($null -eq $audioConfig.PSObject.Properties['mode']) { Add-Member -InputObject $audioConfig -NotePropertyName mode -NotePropertyValue 'copy' }
+    if ($null -eq $audioConfig.PSObject.Properties['aacBitrateKbps']) { Add-Member -InputObject $audioConfig -NotePropertyName aacBitrateKbps -NotePropertyValue 256 }
+    $audioConfig.mode = ([string]$audioConfig.mode).ToLowerInvariant()
+    if ($audioConfig.mode -notin @('copy', 'aac')) {
+        throw "Unsupported audio mode '$($audioConfig.mode)'. Expected 'copy' or 'aac'."
+    }
+    $aacBitrateValue = [string]$audioConfig.aacBitrateKbps
+    if ($aacBitrateValue -ieq 'source') {
+        $audioConfig.aacBitrateKbps = 'source'
+    } else {
+        $parsedAacBitrate = 0
+        if (-not [int]::TryParse($aacBitrateValue, [ref]$parsedAacBitrate) -or $parsedAacBitrate -le 0) {
+            throw "audio.aacBitrateKbps must be a positive integer or 'source'."
+        }
+        $audioConfig.aacBitrateKbps = $parsedAacBitrate
+    }
+
+    $dateConfig = $config.dates
+    if ($null -eq $dateConfig) {
+        $dateConfig = [pscustomobject]@{}
+    }
+    if ($null -eq $dateConfig.PSObject.Properties['timezoneMode']) { Add-Member -InputObject $dateConfig -NotePropertyName timezoneMode -NotePropertyValue 'sourceOrZone' }
+    if ($null -eq $dateConfig.PSObject.Properties['defaultTimezone']) { Add-Member -InputObject $dateConfig -NotePropertyName defaultTimezone -NotePropertyValue 'Europe/Moscow' }
+    if ($null -eq $dateConfig.PSObject.Properties['unknownTimezonePolicy']) { Add-Member -InputObject $dateConfig -NotePropertyName unknownTimezonePolicy -NotePropertyValue 'keepLocal' }
+    if ($null -eq $dateConfig.PSObject.Properties['fileDateFallbackMode']) { Add-Member -InputObject $dateConfig -NotePropertyName fileDateFallbackMode -NotePropertyValue 'disabled' }
+    if ($null -eq $dateConfig.PSObject.Properties['preferFileNameOverFileSystemDates']) { Add-Member -InputObject $dateConfig -NotePropertyName preferFileNameOverFileSystemDates -NotePropertyValue $true }
+    if ($null -eq $dateConfig.PSObject.Properties['setAllCommonDateTags']) { Add-Member -InputObject $dateConfig -NotePropertyName setAllCommonDateTags -NotePropertyValue $true }
+    if ($null -eq $dateConfig.PSObject.Properties['strictDateMode']) { Add-Member -InputObject $dateConfig -NotePropertyName strictDateMode -NotePropertyValue $false }
+    $dateConfig.timezoneMode = ([string]$dateConfig.timezoneMode).ToLowerInvariant()
+    if ($dateConfig.timezoneMode -notin @('sourceorzone', 'sourceonly', 'none')) {
+        throw "Unsupported dates.timezoneMode '$($dateConfig.timezoneMode)'. Expected 'sourceOrZone', 'sourceOnly', or 'none'."
+    }
+    $dateConfig.timezoneMode = switch ($dateConfig.timezoneMode) { 'sourceorzone' { 'sourceOrZone' }; 'sourceonly' { 'sourceOnly' }; default { 'none' } }
+    if ([string]$dateConfig.unknownTimezonePolicy -ne 'keepLocal') {
+        throw "Unsupported dates.unknownTimezonePolicy '$($dateConfig.unknownTimezonePolicy)'. Expected 'keepLocal'."
+    }
+
+    if ($dateConfig.timezoneMode -eq 'sourceOrZone') {
+        $configuredTimeZone = [string]$dateConfig.defaultTimezone
+        $timeZoneFound = $false
+        $candidateTimeZones = @($configuredTimeZone)
+        if ($configuredTimeZone -eq 'Europe/Moscow') { $candidateTimeZones += 'Russian Standard Time' }
+        if ($configuredTimeZone -eq 'Russian Standard Time') { $candidateTimeZones += 'Europe/Moscow' }
+        foreach ($candidateTimeZone in $candidateTimeZones) {
+            try { $null = [TimeZoneInfo]::FindSystemTimeZoneById($candidateTimeZone); $timeZoneFound = $true; break } catch { }
+        }
+        if (-not $timeZoneFound) {
+            throw "dates.defaultTimezone '$configuredTimeZone' is not available on this system."
+        }
     }
 
     [pscustomobject]@{
@@ -151,6 +231,7 @@ function Import-VideoArchiveConfig {
         Output = [pscustomobject]@{
             HdrSuffix = $config.output.hdrSuffix
             SdrSuffix = $config.output.sdrSuffix
+            Container = $outputContainer
             LogsFolder = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.output.logsFolder
             TempFolder = Resolve-VideoArchivePath -ProjectRoot $resolvedRoot -RelativePath $config.output.tempFolder
         }
@@ -166,21 +247,8 @@ function Import-VideoArchiveConfig {
                 fileTimestampMode = 'captureDate'
             }
         }
-        Dates = if ($null -ne $config.dates) {
-            if ($null -eq $config.dates.PSObject.Properties['fileDateFallbackMode']) {
-                Add-Member -InputObject $config.dates -NotePropertyName fileDateFallbackMode -NotePropertyValue 'disabled'
-            }
-            $config.dates
-        } else {
-            [pscustomobject]@{
-                timezoneMode = 'none'
-                defaultTimezoneOffset = '+03:00'
-                preferFileNameOverFileSystemDates = $true
-                fileDateFallbackMode = 'disabled'
-                setAllCommonDateTags = $true
-                strictDateMode = $false
-            }
-        }
+        Audio = $audioConfig
+        Dates = $dateConfig
         Encoder = if ($null -ne $config.encoder) {
             if ($null -eq $config.encoder.PSObject.Properties['defaultBackend']) {
                 Add-Member -InputObject $config.encoder -NotePropertyName defaultBackend -NotePropertyValue 'auto'

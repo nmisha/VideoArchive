@@ -121,6 +121,106 @@ exit 0
         $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2026-07-05T10:00:00'
     }
 
+    It 'preserves an explicit historical offset from camera metadata' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-offset.ps1'
+        @'
+Write-Output '[{"DateTimeOriginal":"2012:09:01 22:08:13+04:00"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+        $dateConfig = [pscustomobject]@{
+            timezoneMode = 'sourceOrZone'
+            defaultTimezone = 'Europe/Moscow'
+            defaultTimezoneOffset = '+00:00'
+            fileDateFallbackMode = 'disabled'
+        }
+        $videoPath = Join-Path $tempRoot 'camera-offset.mts'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2012-09-01T22:08:13'
+        $result.DateTimeOffset.ToString('yyyy-MM-ddTHH:mm:sszzz') | Should Be '2012-09-01T22:08:13+04:00'
+        $result.DateTimeOffset.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ') | Should Be '2012-09-01T18:08:13Z'
+        $result.TimezoneSource | Should Be 'SourceMetadata'
+    }
+
+    It 'prefers an explicit offset over a higher-priority offset-less tag' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-mixed-timezone.ps1'
+        @'
+Write-Output '[{"QuickTime:MediaCreateDate":"2012:09:01 18:08:13","DateTimeOriginal":"2012:09:01 22:08:13+04:00"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+        $dateConfig = [pscustomobject]@{
+            timezoneMode = 'sourceOrZone'; defaultTimezone = 'Europe/Moscow'; defaultTimezoneOffset = '+00:00'; fileDateFallbackMode = 'disabled'
+        }
+        $videoPath = Join-Path $tempRoot 'camera-mixed-timezone.mp4'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.Pattern | Should Be 'DateTimeOriginal'
+        $result.DateTimeOffset.ToString('yyyy-MM-ddTHH:mm:sszzz') | Should Be '2012-09-01T22:08:13+04:00'
+    }
+
+    It 'uses historical zone rules when camera metadata has no offset' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-local-time.ps1'
+        @'
+Write-Output '[{"DateTimeOriginal":"2012:09:01 22:08:13"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+        $dateConfig = [pscustomobject]@{
+            timezoneMode = 'sourceOrZone'
+            defaultTimezone = 'Europe/Moscow'
+            defaultTimezoneOffset = '+00:00'
+            fileDateFallbackMode = 'disabled'
+        }
+        $videoPath = Join-Path $tempRoot 'camera-local-time.mts'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.DateTimeOffset.ToString('yyyy-MM-ddTHH:mm:sszzz') | Should Be '2012-09-01T22:08:13+04:00'
+        $result.TimezoneSource | Should Be 'ConfiguredZone'
+    }
+
+    It 'keeps local time without inventing an offset when no zone may be used' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-unknown-zone.ps1'
+        @'
+Write-Output '[{"DateTimeOriginal":"2012:09:01 22:08:13"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+        $dateConfig = [pscustomobject]@{
+            timezoneMode = 'sourceOnly'
+            defaultTimezone = ''
+            defaultTimezoneOffset = '+00:00'
+            fileDateFallbackMode = 'disabled'
+        }
+        $videoPath = Join-Path $tempRoot 'camera-unknown-zone.mts'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+
+        $result = Resolve-VideoCaptureDate -Path $videoPath -ExifToolPath $toolPath -DateConfig $dateConfig
+
+        $result.HasTimezone | Should Be $false
+        $result.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') | Should Be '2012-09-01T22:08:13'
+        ($result.Warnings -join ' | ') | Should Match 'without UTC conversion'
+    }
+
+    It 'writes UTC QuickTime dates and offset-aware local metadata' {
+        $toolPath = Join-Path $tempRoot 'fake-exiftool-write.ps1'
+        @'
+Write-Output ($args -join "`n")
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding utf8
+        $videoPath = Join-Path $tempRoot 'output.mp4'
+        Set-Content -LiteralPath $videoPath -Value 'x' -Encoding utf8
+        $dateWithOffset = [datetimeoffset]::Parse('2012-09-01T22:08:13+04:00')
+
+        $arguments = Set-VideoCaptureDate -Path $videoPath -CaptureDate $dateWithOffset.DateTime -CaptureDateTimeOffset $dateWithOffset -HasTimezone -Source Metadata -ExifToolPath $toolPath -SetAllCommonDateTags
+
+        $arguments | Should Match 'QuickTime:CreateDate=2012:09:01 18:08:13'
+        $arguments | Should Match 'Keys:CreationDate=2012:09:01 22:08:13\+04:00'
+    }
+
     It 'falls back to file name when metadata date is invalid' {
         $toolPath = Join-Path $tempRoot 'fake-exiftool-invalid.ps1'
         @'

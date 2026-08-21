@@ -124,6 +124,8 @@ Inputs:
 - `VideoInfo`
 - Smart Skip rules
 - CLI overrides such as `-Force` and `-NoSmartSkip`
+- mandatory transcoding for `smartskip.legacySourceExtensions`, independent of source size;
+- optional transcoding of small modern sources through `smartskip.encodeSmallModernFiles`;
 
 Returns:
 
@@ -163,7 +165,10 @@ Rules:
 - no FPS conversion;
 - HDR defaults to HEVC Main10 10-bit;
 - SDR defaults to HEVC Main 8-bit;
-- audio stays in copy mode.
+- audio stays in copy mode by default;
+- optional `audio.mode=aac` copies existing AAC tracks and converts only non-AAC tracks;
+- `audio.aacBitrateKbps=source` preserves each converted track's reported source bitrate, with a 256 kbps fallback when it is unavailable;
+- output container policy supports `mp4`, `mkv`, and `source`.
 
 Selection policy:
 
@@ -183,6 +188,8 @@ Responsibilities:
 - copy metadata from source to encoded file;
 - expose metadata snapshot for validation;
 - restore filesystem timestamps according to `metadata.fileTimestampMode`.
+- restore resolved capture dates to writable MP4 metadata tags;
+- create `<name>.metadata.json` sidecars for MKV outputs, where embedded date tags are not writable through ExifTool.
 
 Current timestamp behavior:
 
@@ -191,9 +198,11 @@ Current timestamp behavior:
 
 Timezone behavior for file timestamps:
 
-- if capture date source is `Metadata`, apply `dates.defaultTimezoneOffset` to Windows file timestamps;
-- if capture date source is `FileName`, do not apply offset again;
-- this avoids double-shifting file names that already contain local time.
+- preserve an explicit source offset;
+- otherwise resolve historical offset rules from `dates.defaultTimezone` in `sourceOrZone` mode;
+- preserve unresolved dates as local wall-clock time without UTC conversion;
+- write MP4 QuickTime integer dates in UTC and offset-aware local time in `Keys:CreationDate`;
+- store the corresponding UTC instant in Windows timestamps when an offset is known, and never add an offset directly to wall-clock time.
 
 ### `Validator.psm1`
 
@@ -214,6 +223,8 @@ Checks:
 - metadata date and GPS survive;
 - file timestamps match the configured policy;
 - recovered capture date matches output metadata within tolerance.
+- MP4 capture date is present in embedded metadata;
+- MKV metadata sidecar exists, parses successfully, matches source/output identity, and preserves capture date and GPS.
 
 Special case:
 

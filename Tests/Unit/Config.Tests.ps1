@@ -101,6 +101,22 @@ Describe 'Config hardware detection' {
             $config.Encoder.detectHardwareOnStartup | Should Be $true
             $config.Encoder.alwaysPromptEncoderChoiceWithoutRtx | Should Be $true
             $config.Encoder.alwaysPromptEncoderChoice | Should Be $false
+            $config.Output.Container | Should Be 'mp4'
+            $config.Audio.mode | Should Be 'copy'
+            $config.Audio.aacBitrateKbps | Should Be 256
+            $config.Dates.defaultTimezone | Should Be 'Europe/Moscow'
+            $config.Dates.unknownTimezonePolicy | Should Be 'keepLocal'
+            $config.SmartSkip.encodeSmallModernFiles | Should Be $false
+            (@($config.SmartSkip.legacySourceExtensions) -contains '.mts') | Should Be $true
+
+            $configPath = Join-Path $tempRoot 'config.json'
+            $sourceBitrateConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+            Add-Member -InputObject $sourceBitrateConfig -NotePropertyName audio -NotePropertyValue ([pscustomobject]@{ mode = 'aac'; aacBitrateKbps = 'source' })
+            $sourceBitrateConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $configPath -Encoding utf8
+            $config = Import-VideoArchiveConfig -ProjectRoot $tempRoot -PresetName 'Balanced'
+
+            $config.Audio.mode | Should Be 'aac'
+            $config.Audio.aacBitrateKbps | Should Be 'source'
         } finally {
             if (Test-Path -LiteralPath $tempRoot) {
                 Remove-Item -LiteralPath $tempRoot -Recurse -Force

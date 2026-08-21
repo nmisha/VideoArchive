@@ -23,9 +23,9 @@ Describe 'Validator' {
         $sourceItem.CreationTime = [datetime]'2026-07-05T12:00:00'
         $sourceItem.LastWriteTime = [datetime]'2026-07-05T12:01:00'
         $sourceItem.LastAccessTime = [datetime]'2026-07-05T12:02:00'
-        $outputItem.CreationTime = [datetime]'2026-07-05T15:03:00'
-        $outputItem.LastWriteTime = [datetime]'2026-07-05T15:03:00'
-        $outputItem.LastAccessTime = [datetime]'2026-07-05T15:03:00'
+        $outputItem.CreationTime = [datetime]'2026-07-05T12:03:00'
+        $outputItem.LastWriteTime = [datetime]'2026-07-05T12:03:00'
+        $outputItem.LastAccessTime = [datetime]'2026-07-05T12:03:00'
 
         $sourceInfo = [pscustomobject]@{
             Width = 3840
@@ -531,6 +531,28 @@ Describe 'Validator' {
         ($result.Errors -join ' | ') | Should Match 'strict date mode'
     }
 
+    It 'treats missing rotation and zero rotation as equivalent' {
+        $sourceFile = Join-Path $tempRoot 'source_rotation_default.mp4'
+        $outputFile = Join-Path $tempRoot 'output_rotation_zero.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = $null; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'AVC'; AudioTrackCount = 1
+            AudioCodec = 'AC-3'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+        $outputInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AC-3'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile
+
+        $result.Success | Should Be $true
+    }
+
     It 'validates capture date when only one output date tag exists' {
         $captureDateResult = [pscustomobject]@{
             Success = $true
@@ -556,13 +578,13 @@ Describe 'Validator' {
         @($result.Errors).Count | Should Be 0
     }
 
-    It 'warns instead of failing when MKV capture date is preserved in filesystem timestamps' {
+    It 'warns instead of failing when MKV capture date is preserved in a sidecar' {
         $sourceFile = Join-Path $tempRoot 'source_mkv_date.mts'
         $outputFile = Join-Path $tempRoot 'output_mkv_date.mkv'
         Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
         Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
 
-        $expectedFileDate = [datetime]'2012-09-02T01:08:13'
+        $expectedFileDate = [datetime]'2012-09-01T22:08:13'
         $outputItem = Get-Item -LiteralPath $outputFile
         $outputItem.CreationTime = $expectedFileDate
         $outputItem.LastWriteTime = $expectedFileDate
@@ -586,6 +608,19 @@ Describe 'Validator' {
         $captureDateResult = [pscustomobject]@{
             Success = $true; DateTime = [datetime]'2012-09-01T22:08:13'; Source = 'Metadata'; Pattern = 'DateTimeOriginal'; Warnings = @()
         }
+        $sidecarPath = [System.IO.Path]::ChangeExtension($outputFile, '.metadata.json')
+        [pscustomobject]@{
+            SchemaVersion = 1
+            SourceFile = [System.IO.Path]::GetFullPath($sourceFile)
+            OutputFile = [System.IO.Path]::GetFullPath($outputFile)
+            CaptureDate = '2012-09-01T22:08:13'
+            CaptureDateSource = 'Metadata'
+            CaptureDatePattern = 'DateTimeOriginal'
+            GpsLatitude = $null
+            GpsLongitude = $null
+            SourceFileSizeBytes = (Get-Item -LiteralPath $sourceFile).Length
+            SourceLastWriteTimeUtc = (Get-Item -LiteralPath $sourceFile).LastWriteTimeUtc.ToString('o')
+        } | ConvertTo-Json | Set-Content -LiteralPath $sidecarPath -Encoding UTF8
 
         $result = Test-EncodedVideo `
             -SourceFile $sourceFile `
@@ -597,10 +632,11 @@ Describe 'Validator' {
             -OutputMetadata $outputMetadata `
             -CaptureDateResult $captureDateResult `
             -FileTimestampMode captureDate `
-            -FileTimestampOffset '+03:00'
+            -FileTimestampOffset '+03:00' `
+            -SidecarPath $sidecarPath
 
         $result.Success | Should Be $true
-        ($result.Warnings -join ' | ') | Should Match 'filesystem timestamps'
+        ($result.Warnings -join ' | ') | Should Match 'metadata sidecar'
     }
 
     It 'accepts AV1 when AV1 is the expected output codec' {
@@ -623,5 +659,44 @@ Describe 'Validator' {
         $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ExpectedOutputCodec AV1
 
         $result.Success | Should Be $true
+    }
+
+    It 'accepts AAC output for a non-AAC source when AAC conversion is enabled' {
+        $sourceFile = Join-Path $tempRoot 'source_audio_ac3.mp4'
+        $outputFile = Join-Path $tempRoot 'output_audio_aac.mp4'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+        $sourceInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'AVC'; AudioTrackCount = 1
+            AudioCodec = 'AC-3'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+        $outputInfo = [pscustomobject]@{
+            Width = 1920; Height = 1080; Fps = 25; Rotation = 0; IsHdr = $false; HdrType = 'SDR'; BitDepth = 8
+            Transfer = 'BT.709'; Primaries = 'BT.709'; Matrix = 'BT.709'; Codec = 'HEVC'; AudioTrackCount = 1
+            AudioCodec = 'AAC'; AudioChannels = 2; AudioTracks = @([pscustomobject]@{ Codec = 'AAC'; Channels = 2 })
+        }
+
+        $result = Test-EncodedVideo -SourceFile $sourceFile -SourceInfo $sourceInfo -OutputInfo $outputInfo -OutputFile $outputFile -ExpectedAudioMode aac
+
+        $result.Success | Should Be $true
+    }
+
+    It 'validates both UTC QuickTime time and the original offset' {
+        $captureDate = [datetimeoffset]::Parse('2012-09-01T22:08:13+04:00')
+        $captureDateResult = [pscustomobject]@{
+            Success = $true; DateTime = $captureDate.DateTime; DateTimeOffset = $captureDate; HasTimezone = $true
+            Source = 'Metadata'; Pattern = 'DateTimeOriginal'; Warnings = @()
+        }
+        $outputMetadata = [pscustomobject]@{
+            QuickTimeMediaCreateDate = '2012-09-01T18:08:13'
+            QuickTimeCreateDate = '2012-09-01T18:08:13'
+            KeysCreationDate = '2012-09-01T22:08:13+04:00'
+            XmpCreateDate = '2012-09-01T22:08:13+04:00'
+        }
+
+        $result = & (Get-Module Validator) { param($capture, $metadata) Test-CaptureDateValidation -CaptureDateResult $capture -OutputMetadata $metadata } $captureDateResult $outputMetadata
+
+        @($result.Errors).Count | Should Be 0
     }
 }

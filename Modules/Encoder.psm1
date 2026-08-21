@@ -211,16 +211,57 @@ function Get-ArchiveOutputExtension {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$SourcePath
+        [string]$SourcePath,
+
+        [ValidateSet('mp4', 'mkv', 'source')]
+        [string]$Container = 'mp4'
     )
 
-    switch ([System.IO.Path]::GetExtension($SourcePath).ToLowerInvariant()) {
-        '.mp4' { return '.mp4' }
-        '.mov' { return '.mov' }
-        '.m4v' { return '.m4v' }
-        '.mkv' { return '.mkv' }
-        default { return '.mkv' }
+    if ($Container -eq 'source') {
+        switch ([System.IO.Path]::GetExtension($SourcePath).ToLowerInvariant()) {
+            '.mp4' { return '.mp4' }
+            '.mov' { return '.mov' }
+            '.m4v' { return '.m4v' }
+            '.mkv' { return '.mkv' }
+            default { return '.mkv' }
+        }
     }
+
+    return ".{0}" -f $Container.ToLowerInvariant()
+}
+
+function Get-ArchiveAudioPolicy {
+    param([psobject]$AudioConfig)
+
+    $mode = if ($null -ne $AudioConfig -and $null -ne $AudioConfig.PSObject.Properties['mode']) { [string]$AudioConfig.mode } else { 'copy' }
+    $bitrate = if ($null -ne $AudioConfig -and $null -ne $AudioConfig.PSObject.Properties['aacBitrateKbps']) { $AudioConfig.aacBitrateKbps } else { 256 }
+    $useSourceBitrate = ([string]$bitrate -ieq 'source')
+    return [pscustomobject]@{
+        Mode = $mode.ToLowerInvariant()
+        AacBitrateKbps = if ($useSourceBitrate) { $null } else { [int]$bitrate }
+        UseSourceBitrate = $useSourceBitrate
+        MissingSourceBitrateFallbackKbps = 256
+    }
+}
+
+function Get-AacTrackBitrateKbps {
+    param(
+        [Parameter(Mandatory)][psobject]$AudioPolicy,
+        [psobject]$AudioTrack
+    )
+
+    if (-not $AudioPolicy.UseSourceBitrate) {
+        return [int]$AudioPolicy.AacBitrateKbps
+    }
+
+    if ($null -ne $AudioTrack -and $null -ne $AudioTrack.PSObject.Properties['BitrateKbps']) {
+        $sourceBitrate = 0
+        if ([int]::TryParse([string]$AudioTrack.BitrateKbps, [ref]$sourceBitrate) -and $sourceBitrate -gt 0) {
+            return $sourceBitrate
+        }
+    }
+
+    return [int]$AudioPolicy.MissingSourceBitrateFallbackKbps
 }
 
 function Test-EncoderOptionSupported {
@@ -486,7 +527,9 @@ function New-RigayaEncodeJob {
         [psobject]$EncoderConfig,
 
         [Parameter(Mandatory)]
-        [string]$Codec
+        [string]$Codec,
+
+        [psobject]$AudioConfig
     )
 
     $qvbr = if ($VideoInfo.IsHdr) { [string]$Preset.qvbrHdr } else { [string]$Preset.qvbrSdr }
@@ -503,12 +546,29 @@ function New-RigayaEncodeJob {
         '--bframes', [string]$Preset.bFrames
         '--ref', [string]$Preset.refFrames
         '--gop-len', 'auto'
-        '--audio-copy'
         '--video-metadata', 'copy'
         '--chapter-copy'
         '--log-level', 'info'
         '--process-codepage', 'utf8'
     )
+
+    $audioPolicy = Get-ArchiveAudioPolicy -AudioConfig $AudioConfig
+    if ($audioPolicy.Mode -eq 'aac') {
+        $args += @('--audio-codec', 'aac', '--audio-encode-other-codec-only')
+        if ($audioPolicy.UseSourceBitrate) {
+            $audioTracks = @($VideoInfo.AudioTracks)
+            for ($audioIndex = 0; $audioIndex -lt $audioTracks.Count; $audioIndex++) {
+                if ([string]$audioTracks[$audioIndex].Codec -ne 'AAC') {
+                    $trackBitrate = Get-AacTrackBitrateKbps -AudioPolicy $audioPolicy -AudioTrack $audioTracks[$audioIndex]
+                    $args += @('--audio-bitrate', ("{0}?{1}" -f ($audioIndex + 1), $trackBitrate))
+                }
+            }
+        } else {
+            $args += @('--audio-bitrate', [string]$audioPolicy.AacBitrateKbps)
+        }
+    } else {
+        $args += '--audio-copy'
+    }
 
     if ([string]$Preset.multipass -ne 'none' -and $Codec -eq 'hevc') {
         $args += @('--multipass', [string]$Preset.multipass)
@@ -558,6 +618,7 @@ function New-RigayaEncodeJob {
         TelemetryFormat = 'rigaya'
         EncoderLabel = [System.IO.Path]::GetFileName($executablePath)
         SourceDurationSeconds = $VideoInfo.DurationSeconds
+        AudioMode = $audioPolicy.Mode
     }
 }
 
@@ -577,7 +638,9 @@ function New-SoftwareEncodeJob {
         [psobject]$Tools,
 
         [Parameter(Mandatory)]
-        [psobject]$Preset
+        [psobject]$Preset,
+
+        [psobject]$AudioConfig
     )
 
     $crf = if ($VideoInfo.IsHdr) { [string]$Preset.qvbrHdr } else { [string]$Preset.qvbrSdr }
@@ -592,9 +655,20 @@ function New-SoftwareEncodeJob {
         '-c:v', 'libx265'
         '-preset', $x265Preset
         '-pix_fmt', $(if ($VideoInfo.IsHdr) { 'yuv420p10le' } else { 'yuv420p' })
-        '-c:a', 'copy'
         '-c:s', 'copy'
     )
+
+    $audioPolicy = Get-ArchiveAudioPolicy -AudioConfig $AudioConfig
+    $args += @('-c:a', 'copy')
+    if ($audioPolicy.Mode -eq 'aac') {
+        $audioTracks = @($VideoInfo.AudioTracks)
+        for ($audioIndex = 0; $audioIndex -lt $audioTracks.Count; $audioIndex++) {
+            if ([string]$audioTracks[$audioIndex].Codec -ne 'AAC') {
+                $trackBitrate = Get-AacTrackBitrateKbps -AudioPolicy $audioPolicy -AudioTrack $audioTracks[$audioIndex]
+                $args += @("-c:a:$audioIndex", 'aac', "-b:a:$audioIndex", ("{0}k" -f $trackBitrate))
+            }
+        }
+    }
 
     $x265Params = @("crf=$crf", 'repeat-headers=1')
     if ($VideoInfo.IsHdr) {
@@ -623,6 +697,7 @@ function New-SoftwareEncodeJob {
         TelemetryFormat = 'ffmpeg'
         EncoderLabel = [System.IO.Path]::GetFileName($Tools.Ffmpeg)
         SourceDurationSeconds = $VideoInfo.DurationSeconds
+        AudioMode = $audioPolicy.Mode
     }
 }
 
@@ -647,6 +722,8 @@ function New-EncodeJob {
         [Parameter(Mandatory)]
         [psobject]$EncoderConfig,
 
+        [psobject]$AudioConfig,
+
         [string]$RequestedBackend,
 
         [string]$RequestedCodec
@@ -656,10 +733,10 @@ function New-EncodeJob {
     $backend = Resolve-EncoderBackend -Tools $Tools -EncoderConfig $EncoderConfig -Codec $codec -RequestedBackend $RequestedBackend
 
     switch ($backend) {
-        'nvenc' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec }
-        'qsv' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec }
-        'amf' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec }
-        'software' { return New-SoftwareEncodeJob -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset }
+        'nvenc' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
+        'qsv' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
+        'amf' { return New-RigayaEncodeJob -Backend $backend -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -EncoderConfig $EncoderConfig -Codec $codec -AudioConfig $AudioConfig }
+        'software' { return New-SoftwareEncodeJob -InputFile $InputFile -OutputFile $OutputFile -VideoInfo $VideoInfo -Tools $Tools -Preset $Preset -AudioConfig $AudioConfig }
         default { throw "Unsupported encoder backend '$backend'." }
     }
 }

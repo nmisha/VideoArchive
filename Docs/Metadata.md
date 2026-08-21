@@ -1,5 +1,21 @@
 # Metadata
 
+## Container policy
+
+`output.container` controls the archive container:
+
+```json
+"output": {
+  "container": "mp4"
+}
+```
+
+- `mp4` is the default and stores the resolved capture date in embedded QuickTime/XMP tags.
+- `mkv` creates a required `<name>.metadata.json` sidecar because ExifTool does not support writing embedded Matroska date tags.
+- `source` preserves MP4/MOV/M4V/MKV inputs and falls back to MKV plus sidecar for other source containers.
+
+The MKV sidecar records the source and output paths, resolved capture date, date source and pattern, source fingerprint, warnings, and GPS values. Validation and Resume require this sidecar for MKV results.
+
 ## What gets copied
 
 Via ExifTool:
@@ -58,10 +74,12 @@ When capture date cannot be resolved, the value stays empty and VideoArchive wri
 
 When `metadata.fileTimestampMode = captureDate`:
 
-- metadata-derived capture dates are shifted by `dates.defaultTimezoneOffset` before writing Windows file timestamps;
-- filename-derived capture dates are written as-is, without an extra shift.
+- source metadata offsets are preserved;
+- offset-less dates use historical rules from `dates.defaultTimezone` when `timezoneMode=sourceOrZone`;
+- unresolved zones keep local wall-clock time without inventing an offset;
+- known offsets are converted to the corresponding UTC instant for Windows timestamps; unknown offsets keep the unresolved local wall-clock value.
 
-This is intentional because file names often already contain local time.
+For MP4, QuickTime integer timestamps are UTC. Offset-aware local time is also written to `Keys:CreationDate`. MKV sidecars contain local, offset-aware, and UTC representations when the offset is known.
 
 ## Metadata vs filename semantics
 

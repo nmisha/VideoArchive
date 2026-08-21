@@ -45,6 +45,7 @@ foreach ($module in $requiredModules) {
 $script:VideoArchivePresetName = $null
 $script:VideoArchiveEncoderBackend = $null
 $script:VideoArchiveOutputCodec = $null
+$script:VideoArchiveAudioMode = $null
 
 function Get-ResultClassForAction {
     param([string]$Action)
@@ -56,6 +57,16 @@ function Get-ResultClassForAction {
         'Skip' { return 'Skipped' }
         default { return 'Unknown' }
     }
+}
+
+function Get-CaptureDateRecordText {
+    param([psobject]$CaptureDateResult)
+
+    if ($null -eq $CaptureDateResult -or -not $CaptureDateResult.Success) { return $null }
+    if ($null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and $CaptureDateResult.HasTimezone) {
+        return $CaptureDateResult.DateTimeOffset.ToString('yyyy-MM-ddTHH:mm:sszzz')
+    }
+    return $CaptureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss')
 }
 
 function Get-SkipCategoryFromContext {
@@ -127,7 +138,9 @@ function New-VideoArchiveRecord {
         [string]$SourceCreationTimeUtc,
         [Nullable[long]]$OutputFileSizeBytes,
         [string]$EncoderBackend,
-        [string]$OutputCodec
+        [string]$OutputCodec,
+        [string]$MetadataSidecarPath,
+        [string]$AudioMode
     )
 
     if ([string]::IsNullOrWhiteSpace($ResultClass)) {
@@ -150,6 +163,10 @@ function New-VideoArchiveRecord {
         $OutputCodec = $script:VideoArchiveOutputCodec
     }
 
+    if ([string]::IsNullOrWhiteSpace($AudioMode)) {
+        $AudioMode = $script:VideoArchiveAudioMode
+    }
+
     if (($null -eq $SourceFileSizeBytes -or [string]::IsNullOrWhiteSpace($SourceLastWriteTimeUtc) -or [string]::IsNullOrWhiteSpace($SourceCreationTimeUtc)) -and -not [string]::IsNullOrWhiteSpace($SourcePath) -and (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
         $sourceItem = Get-Item -LiteralPath $SourcePath
         if ($null -eq $SourceFileSizeBytes) { $SourceFileSizeBytes = $sourceItem.Length }
@@ -159,6 +176,13 @@ function New-VideoArchiveRecord {
 
     if ($null -eq $OutputFileSizeBytes -and -not [string]::IsNullOrWhiteSpace($OutputPath) -and (Test-Path -LiteralPath $OutputPath -PathType Leaf)) {
         $OutputFileSizeBytes = (Get-Item -LiteralPath $OutputPath).Length
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MetadataSidecarPath) -and -not [string]::IsNullOrWhiteSpace($OutputPath) -and [System.IO.Path]::GetExtension($OutputPath) -ieq '.mkv') {
+        $candidateSidecarPath = [System.IO.Path]::ChangeExtension($OutputPath, '.metadata.json')
+        if (Test-Path -LiteralPath $candidateSidecarPath -PathType Leaf) {
+            $MetadataSidecarPath = $candidateSidecarPath
+        }
     }
 
     [pscustomobject][ordered]@{
@@ -208,6 +232,8 @@ function New-VideoArchiveRecord {
         OutputFileSizeBytes = $OutputFileSizeBytes
         EncoderBackend = $EncoderBackend
         OutputCodec = $OutputCodec
+        MetadataSidecarPath = $MetadataSidecarPath
+        AudioMode = $AudioMode
     }
 }
 
@@ -317,6 +343,7 @@ try {
     $script:VideoArchivePresetName = $config.PresetName
     $script:VideoArchiveEncoderBackend = $EncoderBackend
     $script:VideoArchiveOutputCodec = $OutputCodec
+    $script:VideoArchiveAudioMode = $config.Audio.mode
     Test-VideoArchiveTools -Config $config | Out-Null
 
     if ([string]::IsNullOrWhiteSpace($InputPath)) {
@@ -383,7 +410,7 @@ try {
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $(@($files).Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"
-    Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec"
+    Write-VideoArchiveStatus -Message "Encoder Policy : backend=$EncoderBackend codec=$OutputCodec container=$($config.Output.Container) audio=$($config.Audio.mode)"
     if ($hardwareProfile.DetectionAttempted -and $hardwareProfile.HasNvidiaRtx) {
         $rtxNames = @($hardwareProfile.Adapters | Where-Object { [string]$_.Name -match 'RTX' } | Select-Object -ExpandProperty Name)
         if (@($rtxNames).Count -gt 0) {
@@ -401,7 +428,7 @@ try {
         Write-VideoArchiveStatus -Message "Resume Skipped: $(@($resumePlan.SkippedFiles).Count)"
     }
 
-    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec"
+    Write-LogMessage -Logger $logger -Message "Run started. Input=$resolvedInputPath Preset=$($config.PresetName) Force=$Force NoSmartSkip=$NoSmartSkip DryRun=$DryRun Resume=$Resume ResumeFrom=$resumeLogPath ResumeMode=$ResumeMode EncoderBackend=$EncoderBackend OutputCodec=$OutputCodec OutputContainer=$($config.Output.Container) AudioMode=$($config.Audio.mode)"
 
     if (@($files).Count -eq 0) {
         $message = if ($null -ne $resumePlan) { 'No files scheduled after resume filtering.' } else { 'No supported video files found.' }
@@ -467,6 +494,8 @@ try {
 
         $tempOutputFile = $null
         $finalOutputFile = $null
+        $metadataSidecarPath = $null
+        $outputPromoted = $false
 
         try {
             $videoInfo = Get-VideoInfo -Path $file.Path -MediaInfoPath $config.Tools.MediaInfo
@@ -490,10 +519,11 @@ try {
                 Write-VideoArchiveStatus -Message ("Warning: {0} | {1}" -f $file.RelativePath, $captureWarning) -Level Warn
             }
 
-            $outputExtension = Get-ArchiveOutputExtension -SourcePath $file.Path
+            $outputExtension = Get-ArchiveOutputExtension -SourcePath $file.Path -Container $config.Output.Container
             $relativeOutputPath = [System.IO.Path]::ChangeExtension($file.RelativePath, $outputExtension)
             $outputRoot = if ($videoInfo.IsHdr) { $outputRoots.HDR } else { $outputRoots.SDR }
             $finalOutputFile = Join-Path -Path $outputRoot -ChildPath $relativeOutputPath
+            $expectedSidecarFile = if ($outputExtension -eq '.mkv') { Get-VideoMetadataSidecarPath -VideoPath $finalOutputFile } else { $null }
             $requestedCodec = if ($OutputCodec -eq 'auto') { $null } else { $OutputCodec }
             $resolvedOutputCodec = (Resolve-OutputCodec -VideoInfo $videoInfo -EncoderConfig $config.Encoder -RequestedCodec $requestedCodec).ToUpperInvariant()
 
@@ -545,7 +575,7 @@ try {
                 continue
             }
 
-            $decision = Get-EncodeDecision -VideoInfo $videoInfo -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip
+            $decision = Get-EncodeDecision -VideoInfo $videoInfo -SourcePath $file.Path -OutputFile $finalOutputFile -SmartSkip $config.SmartSkip -RequiredSidecarFile $expectedSidecarFile -PresetName $config.PresetName -TargetCodec $resolvedOutputCodec -Force:$Force -NoSmartSkip:$NoSmartSkip
             Write-DecisionStatus -Message ("[{0}/{1}] {2} -> {3} ({4})" -f ($index + 1), $fileCount, $file.RelativePath, $decision.Action, $decision.Reason) -Action $decision.Action
 
             if ($decision.Action -eq 'Skip') {
@@ -580,7 +610,7 @@ try {
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
                     -OutputBitDepth $null `
-                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                     -CaptureDateSource $captureDateResult.Source `
                     -CaptureDatePattern $captureDateResult.Pattern `
                     -CaptureDateRecognized $captureDateResult.Success `
@@ -626,7 +656,7 @@ try {
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
                     -OutputBitDepth $null `
-                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                     -CaptureDateSource $captureDateResult.Source `
                     -CaptureDatePattern $captureDateResult.Pattern `
                     -CaptureDateRecognized $captureDateResult.Success `
@@ -641,7 +671,7 @@ try {
             }
 
             $tempOutputFile = Get-TempOutputPath -FinalOutputPath $finalOutputFile -RunId $logger.RunId
-            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec
+            $job = New-EncodeJob -InputFile $file.Path -OutputFile $tempOutputFile -VideoInfo $videoInfo -Tools $config.Tools -Preset $config.Preset -EncoderConfig $config.Encoder -AudioConfig $config.Audio -RequestedBackend $EncoderBackend -RequestedCodec $requestedCodec
             $encodeResult = Invoke-EncodeJob -Job $job -ProgressCallback { param($telemetry) Update-EncodeTelemetry -Telemetry $telemetry -Completed $completedCount -Total $fileCount -StartTime $runStart -Encoded $summary.Encoded -Skipped $summary.Skipped -Failed $summary.Failed -DryRun $summary.DryRun -ResumeSkipped $summary.ResumeSkipped }
             $tempOutputFile = $encodeResult.OutputFile
 
@@ -677,7 +707,7 @@ try {
                     -OutputPrimaries $null `
                     -SourceBitDepth $videoInfo.BitDepth `
                     -OutputBitDepth $null `
-                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                     -CaptureDateSource $captureDateResult.Source `
                     -CaptureDatePattern $captureDateResult.Pattern `
                     -CaptureDateRecognized $captureDateResult.Success `
@@ -697,14 +727,22 @@ try {
             }
 
             Move-Item -LiteralPath $tempOutputFile -Destination $finalOutputFile -Force
-            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateSource ([string]$captureDateResult.Source) -CaptureDateOffset ([string]$config.Dates.defaultTimezoneOffset) | Out-Null
-            if ($captureDateResult.Success -and $captureDateResult.Source -eq 'FileName') {
-                Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
+            $outputPromoted = $true
+            Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $finalOutputFile -ExifToolPath $config.Tools.ExifTool -PreserveWindowsTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime } else { $null }) -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source) | Out-Null
+            if ($captureDateResult.Success -and $outputExtension -in @('.mp4', '.mov', '.m4v')) {
+                Set-VideoCaptureDate -Path $finalOutputFile -CaptureDate $captureDateResult.DateTime -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -Source $captureDateResult.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags:([bool]$config.Dates.setAllCommonDateTags) | Out-Null
+                if ([bool]$config.Metadata.preserveWindowsTimestamps) {
+                    Set-FileSystemTimestamps -SourceFile $file.Path -DestinationFile $finalOutputFile -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -CaptureDate $captureDateResult.DateTime -CaptureDateTimeOffset $captureDateResult.DateTimeOffset -HasTimezone:$captureDateResult.HasTimezone -CaptureDateSource ([string]$captureDateResult.Source)
+                }
+            }
+
+            if ($outputExtension -eq '.mkv') {
+                $metadataSidecarPath = Write-VideoMetadataSidecar -SourceFile $file.Path -OutputFile $finalOutputFile -CaptureDateResult $captureDateResult -SourceMetadata $sourceMetadata
             }
 
             $outputInfo = Get-VideoInfo -Path $finalOutputFile -MediaInfoPath $config.Tools.MediaInfo
             $outputMetadata = Get-VideoMetadataSnapshot -Path $finalOutputFile -ExifToolPath $config.Tools.ExifTool
-            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -FileTimestampOffset ([string]$config.Dates.defaultTimezoneOffset) -ExpectedOutputCodec $job.Codec.ToUpperInvariant()
+            $validation = Test-EncodedVideo -SourceFile $file.Path -SourceInfo $videoInfo -OutputInfo $outputInfo -OutputFile $finalOutputFile -ValidateTimestamps:([bool]$config.Metadata.preserveWindowsTimestamps) -SourceMetadata $sourceMetadata -OutputMetadata $outputMetadata -CaptureDateResult $captureDateResult -StrictDateMode:([bool]$config.Dates.strictDateMode) -FileTimestampMode ([string]$config.Metadata.fileTimestampMode) -ExpectedOutputCodec $job.Codec.ToUpperInvariant() -ExpectedAudioMode $config.Audio.mode -SidecarPath $metadataSidecarPath
 
             if (-not $validation.Success) {
                 $summary.Failed++
@@ -739,7 +777,7 @@ try {
                     -OutputPrimaries $outputInfo.Primaries `
                     -SourceBitDepth $videoInfo.BitDepth `
                     -OutputBitDepth $outputInfo.BitDepth `
-                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                     -CaptureDateSource $captureDateResult.Source `
                     -CaptureDatePattern $captureDateResult.Pattern `
                     -CaptureDateRecognized $captureDateResult.Success `
@@ -748,6 +786,9 @@ try {
                     -DateValidationSuccess $false `
                     -OutputCodec $job.Codec.ToUpperInvariant() `
                     -EncoderBackend $job.Backend)
+                Remove-IfExists -Path $metadataSidecarPath
+                Remove-IfExists -Path $finalOutputFile
+                $outputPromoted = $false
                 $completedCount++
                 $processedSourceBytes += [long]$file.SizeBytes
                 continue
@@ -762,8 +803,10 @@ try {
             }
 
             $smartSkipActive = (-not $Force) -and (-not $NoSmartSkip) -and [bool]$config.SmartSkip.enabled
-            if ($smartSkipActive -and $savingsPercent -lt [double]$config.SmartSkip.deleteOutputIfSavingsBelowPercent) {
+            $protectOutputFromSavingsDiscard = $null -ne $decision.PSObject.Properties['ProtectOutputFromSavingsDiscard'] -and [bool]$decision.ProtectOutputFromSavingsDiscard
+            if ($smartSkipActive -and -not $protectOutputFromSavingsDiscard -and $savingsPercent -lt [double]$config.SmartSkip.deleteOutputIfSavingsBelowPercent) {
                 Remove-IfExists -Path $finalOutputFile
+                Remove-IfExists -Path $metadataSidecarPath
                 $summary.Skipped++
                 Write-FileResultStatus -FileName $file.RelativePath -Action 'Discarded' -SourceSizeMb $sourceSizeMb -OutputSizeMb $outputSizeMb -SavingsPercent $savingsPercent -Duration $encodeResult.Duration
                 Write-LogRecord -Logger $logger -Record (New-VideoArchiveRecord `
@@ -796,7 +839,7 @@ try {
                     -OutputPrimaries $outputInfo.Primaries `
                     -SourceBitDepth $videoInfo.BitDepth `
                     -OutputBitDepth $outputInfo.BitDepth `
-                    -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                    -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                     -CaptureDateSource $captureDateResult.Source `
                     -CaptureDatePattern $captureDateResult.Pattern `
                     -CaptureDateRecognized $captureDateResult.Success `
@@ -846,7 +889,7 @@ try {
                 -OutputPrimaries $outputInfo.Primaries `
                 -SourceBitDepth $videoInfo.BitDepth `
                 -OutputBitDepth $outputInfo.BitDepth `
-                -CaptureDate $(if ($captureDateResult.Success) { $captureDateResult.DateTime.ToString('yyyy-MM-ddTHH:mm:ss') } else { $null }) `
+                -CaptureDate (Get-CaptureDateRecordText -CaptureDateResult $captureDateResult) `
                 -CaptureDateSource $captureDateResult.Source `
                 -CaptureDatePattern $captureDateResult.Pattern `
                 -CaptureDateRecognized $captureDateResult.Success `
@@ -891,6 +934,10 @@ try {
                 -SourceBitDepth $null `
                 -OutputBitDepth $null)
             Remove-IfExists -Path $tempOutputFile
+            if ($outputPromoted) {
+                Remove-IfExists -Path $metadataSidecarPath
+                Remove-IfExists -Path $finalOutputFile
+            }
             $completedCount++
             $processedSourceBytes += [long]$file.SizeBytes
         }

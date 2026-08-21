@@ -65,33 +65,6 @@ function Resolve-ComparableColorValue {
     }
 }
 
-function ConvertTo-TimezoneAdjustedDate {
-    param(
-        [Parameter(Mandatory)]
-        [datetime]$DateTime,
-
-        [string]$Offset = '+00:00'
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Offset) -or $Offset -eq '+00:00') {
-        return $DateTime
-    }
-
-    $match = [regex]::Match($Offset.Trim(), '^(?<sign>[+\-])(?<hours>\d{2}):(?<minutes>\d{2})$')
-    if (-not $match.Success) {
-        return $DateTime
-    }
-
-    $hours = [int]$match.Groups['hours'].Value
-    $minutes = [int]$match.Groups['minutes'].Value
-    $timeSpan = New-TimeSpan -Hours $hours -Minutes $minutes
-    if ($match.Groups['sign'].Value -eq '-') {
-        $timeSpan = -$timeSpan
-    }
-
-    return $DateTime.Add($timeSpan)
-}
-
 function Test-MetadataPreserved {
     [CmdletBinding()]
     param(
@@ -100,6 +73,8 @@ function Test-MetadataPreserved {
         [psobject]$OutputMetadata,
 
         [switch]$AllowMissingDateTaken,
+
+        [switch]$AllowMissingGps,
 
         [double]$GpsTolerance = 0.0001
     )
@@ -121,7 +96,9 @@ function Test-MetadataPreserved {
 
     if ($SourceMetadata.HasGps) {
         if (-not $OutputMetadata.HasGps) {
-            $errors.Add('GPS metadata missing in output')
+            if (-not $AllowMissingGps) {
+                $errors.Add('GPS metadata missing in output')
+            }
         } else {
             $latitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLatitude) - ([double]$OutputMetadata.GpsLatitude))
             $longitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLongitude) - ([double]$OutputMetadata.GpsLongitude))
@@ -132,6 +109,99 @@ function Test-MetadataPreserved {
     }
 
     return @($errors)
+}
+
+function Get-OptionalObjectValue {
+    param([psobject]$Object, [string]$Name)
+
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Test-MetadataSidecar {
+    [CmdletBinding()]
+    param(
+        [string]$SidecarPath,
+        [Parameter(Mandatory)][string]$SourceFile,
+        [Parameter(Mandatory)][string]$OutputFile,
+        [psobject]$CaptureDateResult,
+        [psobject]$SourceMetadata,
+        [double]$DateToleranceSeconds = 2,
+        [double]$GpsTolerance = 0.0001
+    )
+
+    $errors = New-Object System.Collections.Generic.List[string]
+    $warnings = New-Object System.Collections.Generic.List[string]
+
+    if ([string]::IsNullOrWhiteSpace($SidecarPath) -or -not (Test-Path -LiteralPath $SidecarPath -PathType Leaf)) {
+        $errors.Add("MKV metadata sidecar is missing: $SidecarPath")
+        return [pscustomobject]@{ Success = $false; Errors = @($errors); Warnings = @($warnings) }
+    }
+
+    try {
+        $sidecar = Get-Content -LiteralPath $SidecarPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        $errors.Add("MKV metadata sidecar is invalid JSON: $($_.Exception.Message)")
+        return [pscustomobject]@{ Success = $false; Errors = @($errors); Warnings = @($warnings) }
+    }
+
+    if ([int]$sidecar.SchemaVersion -ne 1) {
+        $errors.Add("Unsupported metadata sidecar schema version: $($sidecar.SchemaVersion)")
+    }
+
+    $expectedSource = [System.IO.Path]::GetFullPath($SourceFile)
+    $expectedOutput = [System.IO.Path]::GetFullPath($OutputFile)
+    $sourceItem = Get-Item -LiteralPath $SourceFile -ErrorAction Stop
+    if (-not [string]::Equals([string]$sidecar.SourceFile, $expectedSource, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $errors.Add("Metadata sidecar source mismatch: '$($sidecar.SourceFile)' -> '$expectedSource'")
+    }
+    if (-not [string]::Equals([string]$sidecar.OutputFile, $expectedOutput, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $errors.Add("Metadata sidecar output mismatch: '$($sidecar.OutputFile)' -> '$expectedOutput'")
+    }
+    if ([long]$sidecar.SourceFileSizeBytes -ne [long]$sourceItem.Length) {
+        $errors.Add("Metadata sidecar source size mismatch: '$($sidecar.SourceFileSizeBytes)' -> '$($sourceItem.Length)'")
+    }
+    try {
+        $sidecarLastWriteUtc = [datetime]::Parse([string]$sidecar.SourceLastWriteTimeUtc, [System.Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+        if ([math]::Abs(($sourceItem.LastWriteTimeUtc - $sidecarLastWriteUtc).TotalSeconds) -gt 1) {
+            $errors.Add('Metadata sidecar source timestamp fingerprint does not match the source file')
+        }
+    } catch {
+        $errors.Add("Metadata sidecar source timestamp is missing or invalid: '$($sidecar.SourceLastWriteTimeUtc)'")
+    }
+
+    if ($null -ne $CaptureDateResult -and $CaptureDateResult.Success) {
+        if ([string]$sidecar.CaptureDateSource -ne [string]$CaptureDateResult.Source) {
+            $errors.Add("Metadata sidecar capture date source mismatch: '$($sidecar.CaptureDateSource)' -> '$($CaptureDateResult.Source)'")
+        }
+        if ([string]$sidecar.CaptureDatePattern -ne [string]$CaptureDateResult.Pattern) {
+            $errors.Add("Metadata sidecar capture date pattern mismatch: '$($sidecar.CaptureDatePattern)' -> '$($CaptureDateResult.Pattern)'")
+        }
+        try {
+            $sidecarDate = [datetime]::Parse([string]$sidecar.CaptureDate, [System.Globalization.CultureInfo]::InvariantCulture)
+            if ([math]::Abs(($CaptureDateResult.DateTime - $sidecarDate).TotalSeconds) -gt $DateToleranceSeconds) {
+                $errors.Add("Metadata sidecar capture date mismatch: '$($CaptureDateResult.DateTime)' -> '$($sidecar.CaptureDate)'")
+            }
+        } catch {
+            $errors.Add("Metadata sidecar capture date is missing or invalid: '$($sidecar.CaptureDate)'")
+        }
+    }
+
+    if ($null -ne $SourceMetadata -and $SourceMetadata.HasGps) {
+        if ($null -eq $sidecar.GpsLatitude -or $null -eq $sidecar.GpsLongitude) {
+            $errors.Add('GPS metadata missing in MKV sidecar')
+        } else {
+            $latitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLatitude) - ([double]$sidecar.GpsLatitude))
+            $longitudeDelta = [math]::Abs(([double]$SourceMetadata.GpsLongitude) - ([double]$sidecar.GpsLongitude))
+            if ($latitudeDelta -gt $GpsTolerance -or $longitudeDelta -gt $GpsTolerance) {
+                $errors.Add('GPS metadata mismatch in MKV sidecar')
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Success = ($errors.Count -eq 0); Errors = @($errors); Warnings = @($warnings) }
 }
 
 function Test-CaptureDateValidation {
@@ -181,14 +251,26 @@ function Test-CaptureDateValidation {
         }
     }
 
-    $candidateDates = @(@(
-        $OutputMetadata.QuickTimeMediaCreateDate
-        $OutputMetadata.QuickTimeCreateDate
+    $quickTimeDates = @(@(
+        Get-OptionalObjectValue -Object $OutputMetadata -Name 'QuickTimeMediaCreateDate'
+        Get-OptionalObjectValue -Object $OutputMetadata -Name 'QuickTimeCreateDate'
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $localDates = @(@(
+        Get-OptionalObjectValue -Object $OutputMetadata -Name 'KeysCreationDate'
+        Get-OptionalObjectValue -Object $OutputMetadata -Name 'XmpCreateDate'
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $hasTimezone = $null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and [bool]$CaptureDateResult.HasTimezone
+    $candidateDates = @()
+    if ($hasTimezone) {
+        $candidateDates += @($localDates)
+    } else {
+        $candidateDates += @($localDates)
+        $candidateDates += @($quickTimeDates)
+    }
 
-    if ($candidateDates.Count -eq 0) {
+    if (@($candidateDates).Count -eq 0) {
         if ($AllowMissingOutputDateTags) {
-            $warnings.Add('Output container does not support writable embedded capture-date tags; capture date is preserved in filesystem timestamps.')
+            $warnings.Add('Output container does not support writable embedded capture-date tags; capture date is preserved in the validated metadata sidecar.')
         } else {
             $errors.Add('Output capture date tags are missing.')
         }
@@ -202,20 +284,48 @@ function Test-CaptureDateValidation {
     $matched = $false
     foreach ($candidateDate in $candidateDates) {
         try {
-            $actual = [datetime]::Parse($candidateDate, [System.Globalization.CultureInfo]::InvariantCulture)
-            if ([math]::Abs(($expected - $actual).TotalSeconds) -le $ToleranceSeconds) {
-                $matched = $true
-                break
+            if ($hasTimezone -and [string]$candidateDate -match '(?:Z|[+\-]\d{2}:?\d{2})$') {
+                $actualWithOffset = [datetimeoffset]::Parse([string]$candidateDate, [System.Globalization.CultureInfo]::InvariantCulture)
+                $expectedWithOffset = [datetimeoffset]$CaptureDateResult.DateTimeOffset
+                if ([math]::Abs(($expectedWithOffset.UtcDateTime - $actualWithOffset.UtcDateTime).TotalSeconds) -le $ToleranceSeconds -and $expectedWithOffset.Offset -eq $actualWithOffset.Offset) {
+                    $matched = $true
+                    break
+                }
+            } else {
+                $actual = [datetime]::Parse([string]$candidateDate, [System.Globalization.CultureInfo]::InvariantCulture)
+                if ([math]::Abs(($expected - $actual).TotalSeconds) -le $ToleranceSeconds) {
+                    $matched = $true
+                    break
+                }
             }
         } catch {
         }
     }
 
-    if (-not $matched) {
-        $errors.Add("Capture date mismatch: expected $($expected.ToString('yyyy-MM-ddTHH:mm:ss'))")
+    if ($matched -and $hasTimezone -and $quickTimeDates.Count -gt 0) {
+        $expectedUtc = ([datetimeoffset]$CaptureDateResult.DateTimeOffset).UtcDateTime
+        $utcMatched = $false
+        foreach ($quickTimeDate in $quickTimeDates) {
+            try {
+                $actualUtc = [datetime]::SpecifyKind([datetime]::Parse([string]$quickTimeDate, [System.Globalization.CultureInfo]::InvariantCulture), [DateTimeKind]::Utc)
+                if ([math]::Abs(($expectedUtc - $actualUtc).TotalSeconds) -le $ToleranceSeconds) {
+                    $utcMatched = $true
+                    break
+                }
+            } catch { }
+        }
+        if (-not $utcMatched) {
+            $matched = $false
+            $errors.Add("QuickTime UTC date mismatch: expected $($expectedUtc.ToString('yyyy-MM-ddTHH:mm:ssZ'))")
+        }
     }
 
-    [pscustomobject]@{
+    if (-not $matched -and $errors.Count -eq 0) {
+        $expectedText = if ($hasTimezone) { ([datetimeoffset]$CaptureDateResult.DateTimeOffset).ToString('yyyy-MM-ddTHH:mm:sszzz') } else { $expected.ToString('yyyy-MM-ddTHH:mm:ss') }
+        $errors.Add("Capture date mismatch: expected $expectedText")
+    }
+
+    return [pscustomobject]@{
         Warnings = @($warnings)
         Errors = @($errors)
     }
@@ -353,7 +463,12 @@ function Test-EncodedVideo {
         [string]$FileTimestampOffset = '+00:00',
 
         [ValidateSet('HEVC', 'AV1')]
-        [string]$ExpectedOutputCodec = 'HEVC'
+        [string]$ExpectedOutputCodec = 'HEVC',
+
+        [ValidateSet('copy', 'aac')]
+        [string]$ExpectedAudioMode = 'copy',
+
+        [string]$SidecarPath
     )
 
     $errors = New-Object System.Collections.Generic.List[string]
@@ -372,10 +487,10 @@ function Test-EncodedVideo {
         $errors.Add("Resolution mismatch: $($SourceInfo.Width)x$($SourceInfo.Height) -> $($OutputInfo.Width)x$($OutputInfo.Height)")
     }
 
-    if ($null -ne $SourceInfo.Rotation -or $null -ne $OutputInfo.Rotation) {
-        if ($null -eq $SourceInfo.Rotation -or $null -eq $OutputInfo.Rotation -or [math]::Abs($SourceInfo.Rotation - $OutputInfo.Rotation) -gt $RotationTolerance) {
-            $errors.Add("Rotation mismatch: $($SourceInfo.Rotation) -> $($OutputInfo.Rotation)")
-        }
+    $sourceRotation = if ($null -eq $SourceInfo.Rotation) { 0.0 } else { [double]$SourceInfo.Rotation }
+    $outputRotation = if ($null -eq $OutputInfo.Rotation) { 0.0 } else { [double]$OutputInfo.Rotation }
+    if ([math]::Abs($sourceRotation - $outputRotation) -gt $RotationTolerance) {
+        $errors.Add("Rotation mismatch: $($SourceInfo.Rotation) -> $($OutputInfo.Rotation)")
     }
 
     if ($null -ne $SourceInfo.Fps -and $null -ne $OutputInfo.Fps) {
@@ -442,8 +557,9 @@ function Test-EncodedVideo {
     if ($sourceAudioTracks.Count -gt 0 -or $outputAudioTracks.Count -gt 0) {
         $trackCount = [math]::Min($sourceAudioTracks.Count, $outputAudioTracks.Count)
         for ($index = 0; $index -lt $trackCount; $index++) {
-            if (-not (Test-StringEquivalentNormalized -Actual $outputAudioTracks[$index].Codec -Expected $sourceAudioTracks[$index].Codec)) {
-                $errors.Add("Audio codec mismatch on track $($index + 1): '$($sourceAudioTracks[$index].Codec)' -> '$($outputAudioTracks[$index].Codec)'")
+            $expectedAudioCodec = if ($ExpectedAudioMode -eq 'aac') { 'AAC' } else { [string]$sourceAudioTracks[$index].Codec }
+            if (-not (Test-StringEquivalentNormalized -Actual $outputAudioTracks[$index].Codec -Expected $expectedAudioCodec)) {
+                $errors.Add("Audio codec mismatch on track $($index + 1): expected '$expectedAudioCodec', got '$($outputAudioTracks[$index].Codec)' (source '$($sourceAudioTracks[$index].Codec)')")
             }
 
             if ($null -ne $sourceAudioTracks[$index].Channels -or $null -ne $outputAudioTracks[$index].Channels) {
@@ -465,9 +581,11 @@ function Test-EncodedVideo {
     if ($ValidateTimestamps) {
         $expectedTimestamp = $null
         if ($FileTimestampMode -eq 'captureDate' -and $null -ne $CaptureDateResult -and $CaptureDateResult.Success -and $null -ne $CaptureDateResult.DateTime) {
-            $expectedTimestamp = $CaptureDateResult.DateTime
-            if ($CaptureDateResult.Source -eq 'Metadata') {
-                $expectedTimestamp = ConvertTo-TimezoneAdjustedDate -DateTime $expectedTimestamp -Offset $FileTimestampOffset
+            $hasCaptureTimezone = $null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and [bool]$CaptureDateResult.HasTimezone
+            if ($hasCaptureTimezone) {
+                $expectedTimestamp = ([datetimeoffset]$CaptureDateResult.DateTimeOffset).UtcDateTime.ToLocalTime()
+            } else {
+                $expectedTimestamp = [datetime]::SpecifyKind($CaptureDateResult.DateTime, [DateTimeKind]::Unspecified)
             }
         }
 
@@ -481,15 +599,15 @@ function Test-EncodedVideo {
     }
 
     $outputExtension = [System.IO.Path]::GetExtension($OutputFile).ToLowerInvariant()
-    $captureDateStoredInFileTimestamps = (
-        $ValidateTimestamps -and
-        $FileTimestampMode -eq 'captureDate' -and
-        $null -ne $CaptureDateResult -and
-        $CaptureDateResult.Success
-    )
-    $allowMissingEmbeddedDate = ($outputExtension -eq '.mkv' -and $captureDateStoredInFileTimestamps)
+    $sidecarValidation = $null
+    if ($outputExtension -eq '.mkv') {
+        $sidecarValidation = Test-MetadataSidecar -SidecarPath $SidecarPath -SourceFile $SourceFile -OutputFile $OutputFile -CaptureDateResult $CaptureDateResult -SourceMetadata $SourceMetadata
+        foreach ($sidecarWarning in @($sidecarValidation.Warnings)) { $warnings.Add($sidecarWarning) }
+        foreach ($sidecarError in @($sidecarValidation.Errors)) { $errors.Add($sidecarError) }
+    }
+    $allowMissingEmbeddedDate = ($outputExtension -eq '.mkv' -and $null -ne $sidecarValidation -and $sidecarValidation.Success)
 
-    foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata -AllowMissingDateTaken:$allowMissingEmbeddedDate)) {
+    foreach ($metadataError in (Test-MetadataPreserved -SourceMetadata $SourceMetadata -OutputMetadata $OutputMetadata -AllowMissingDateTaken:$allowMissingEmbeddedDate -AllowMissingGps:$allowMissingEmbeddedDate)) {
         $errors.Add($metadataError)
     }
 
@@ -508,4 +626,4 @@ function Test-EncodedVideo {
     }
 }
 
-Export-ModuleMember -Function Test-EncodedVideo, Test-FileTimestampsPreserved, Test-MetadataPreserved
+Export-ModuleMember -Function Test-EncodedVideo, Test-FileTimestampsPreserved, Test-MetadataPreserved, Test-MetadataSidecar

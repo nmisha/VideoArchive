@@ -2,6 +2,14 @@
   "enabled": true,
   "skipAv1": true,
   "skipSmallFilesMb": 50,
+  "encodeSmallModernFiles": true,
+  "legacySourceExtensions": [
+    ".mts",
+    ".m2ts",
+    ".avi",
+    ".wmv",
+    ".webm"
+  ],
   "skipHevcBelowMbps1080p": 10,
   "skipHevcBelowMbps4k": 35,
   "skipHevcBelowMbps8k": 80,

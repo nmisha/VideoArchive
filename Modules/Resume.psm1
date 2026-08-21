@@ -161,7 +161,22 @@ function Test-ResumeRecordCompleted {
     }
 
     $outputFile = Get-Item -LiteralPath $outputPath
-    return ($outputFile.Length -gt 0)
+    if ($outputFile.Length -le 0) {
+        return $false
+    }
+
+    if ([System.IO.Path]::GetExtension($outputPath) -ieq '.mkv') {
+        $sidecarProperty = $HistoryRecord.PSObject.Properties['MetadataSidecarPath']
+        $sidecarPath = if ($null -ne $sidecarProperty) { [string]$sidecarProperty.Value } else { $null }
+        if ([string]::IsNullOrWhiteSpace($sidecarPath)) {
+            $sidecarPath = [System.IO.Path]::ChangeExtension($outputPath, '.metadata.json')
+        }
+        if (-not (Test-Path -LiteralPath $sidecarPath -PathType Leaf)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Get-ResumeDecision {

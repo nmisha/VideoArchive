@@ -264,8 +264,12 @@ function Write-CaptureDateStatus {
         [psobject]$CaptureDateResult
     )
 
-    $dateText = if ($CaptureDateResult.Success -and $null -ne $CaptureDateResult.DateTime) {
-        $CaptureDateResult.DateTime.ToString('yyyy-MM-dd HH:mm:ss')
+      $dateText = if ($CaptureDateResult.Success -and $null -ne $CaptureDateResult.DateTime) {
+          if ($null -ne $CaptureDateResult.PSObject.Properties['HasTimezone'] -and $CaptureDateResult.HasTimezone) {
+              $CaptureDateResult.DateTimeOffset.ToString('yyyy-MM-dd HH:mm:ss zzz')
+          } else {
+              $CaptureDateResult.DateTime.ToString('yyyy-MM-dd HH:mm:ss') + ' (local, offset unknown)'
+          }
     } else {
         'n/a'
     }

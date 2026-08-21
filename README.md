@@ -15,10 +15,13 @@ The project started as an HDR video archiver, but the current architecture is ge
 - Encodes HDR to HEVC Main10 10-bit.
 - Encodes SDR to HEVC Main 8-bit.
 - Preserves source resolution and FPS.
-- Copies audio without re-encoding.
+- Copies audio without re-encoding by default; optional AAC mode converts only non-AAC tracks.
 - Splits outputs into `_HDR_Encoded` and `_SDR_Encoded`.
+- Selects the output container through `output.container` (`mp4` by default, `mkv`, or `source`).
+- Stores capture dates inside MP4; MKV outputs receive a validated `.metadata.json` sidecar.
 - Writes TXT, CSV, and JSONL logs.
 - Supports Smart Skip, `-DryRun`, `-Force`, and `-NoSmartSkip`.
+- Always transcodes configured legacy source containers even when they are below the Smart Skip size threshold; small modern sources can be enabled separately with `encodeSmallModernFiles`.
 - Supports JSONL-based resume with `-Resume`, `-ResumeFrom`, and `-ResumeMode`.
 - Supports `-EncoderBackend auto|nvenc|qsv|amf|software`.
 - Supports `-OutputCodec auto|hevc|av1`.
@@ -58,12 +61,57 @@ When `metadata.fileTimestampMode = "captureDate"`:
 
 are set from the resolved capture date.
 
-Timezone offset behavior:
+Timezone behavior is configured in `config.json`:
 
-- metadata-derived dates are shifted by `dates.defaultTimezoneOffset` before writing Windows file timestamps;
-- filename-derived dates are not shifted again.
+```json
+"dates": {
+  "timezoneMode": "sourceOrZone",
+  "defaultTimezone": "Europe/Moscow",
+  "unknownTimezonePolicy": "keepLocal"
+}
+```
 
-This is done to avoid double-adjusting file names that already contain local time.
+- an offset recorded by the camera always wins;
+- when the source has no offset, `sourceOrZone` applies the historical rules of `defaultTimezone` for the capture date;
+- `sourceOnly` and `none` do not infer an offset;
+- if no offset can be established, the local wall-clock time is preserved and a warning is logged;
+- when an offset is known, Windows file timestamps store the corresponding UTC instant; otherwise they retain the unresolved local wall-clock value;
+- MP4 QuickTime integer dates are written in UTC, while `Keys:CreationDate` retains local time and its offset.
+
+## Output container policy
+
+Set the archive container in `config.json`:
+
+```json
+"output": {
+  "container": "mp4"
+}
+```
+
+Supported values:
+
+- `mp4` (default): all encoded videos use `.mp4`; the resolved capture date is written to embedded QuickTime/XMP date tags.
+- `mkv`: all encoded videos use `.mkv`; because ExifTool cannot write embedded Matroska date tags, VideoArchive creates a sibling `<name>.metadata.json` sidecar containing capture date, source identity, fingerprint, and GPS values.
+- `source`: preserves `.mp4`, `.mov`, `.m4v`, and `.mkv`; other input containers use `.mkv` with a metadata sidecar, matching the original VideoArchive behavior.
+
+An MKV without its required sidecar is not considered complete by Smart Skip or Resume.
+
+## Audio policy
+
+Audio behavior is configured independently:
+
+```json
+"audio": {
+  "mode": "copy",
+  "aacBitrateKbps": 256
+}
+```
+
+- `copy` (default): copy every audio track without re-encoding.
+- `aac`: keep existing AAC tracks in copy mode and convert only non-AAC tracks to AAC at the configured bitrate.
+- `aacBitrateKbps` accepts a positive number or `"source"`. In `"source"` mode, each converted track uses its own source bitrate reported by MediaInfo; if that bitrate is unavailable, VideoArchive uses 256 kbps.
+
+The selective AAC rule applies to NVEncC/QSVEncC/VCEEncC and the FFmpeg software backend. Audio track count and channel count remain validated.
 
 ## Project structure
 

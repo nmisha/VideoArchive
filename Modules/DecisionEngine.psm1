@@ -21,6 +21,15 @@ function Get-HevcThresholdMbps {
     return [double]$SmartSkip.skipHevcBelowMbps1080p
 }
 
+function Get-OptionalDecisionProperty {
+    param([psobject]$Object, [string]$Name, $DefaultValue)
+
+    if ($null -eq $Object) { return $DefaultValue }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $DefaultValue }
+    return $property.Value
+}
+
 function Get-EncodeDecision {
     [CmdletBinding()]
     param(
@@ -32,6 +41,10 @@ function Get-EncodeDecision {
 
         [Parameter(Mandatory)]
         [psobject]$SmartSkip,
+
+        [string]$RequiredSidecarFile,
+
+        [string]$SourcePath,
 
         [string]$PresetName,
 
@@ -63,11 +76,38 @@ function Get-EncodeDecision {
     }
 
     if ([bool]$SmartSkip.skipIfOutputExists -and (Test-Path -LiteralPath $OutputFile -PathType Leaf)) {
+        if (-not [string]::IsNullOrWhiteSpace($RequiredSidecarFile) -and -not (Test-Path -LiteralPath $RequiredSidecarFile -PathType Leaf)) {
+            return [pscustomobject]@{
+                Action = 'Encode'
+                Reason = "Output exists but required metadata sidecar is missing: $RequiredSidecarFile"
+                OutputGroup = $outputGroup
+                SmartSkipApplied = $true
+            }
+        }
+
         return [pscustomobject]@{
             Action = 'Skip'
             Reason = "Output already exists: $OutputFile"
             OutputGroup = $outputGroup
             SmartSkipApplied = $true
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($SourcePath)) {
+        $SourcePath = [string](Get-OptionalDecisionProperty -Object $VideoInfo -Name 'Path' -DefaultValue '')
+    }
+    $sourceExtension = [System.IO.Path]::GetExtension($SourcePath).ToLowerInvariant()
+    $legacyExtensions = @(
+        Get-OptionalDecisionProperty -Object $SmartSkip -Name 'legacySourceExtensions' -DefaultValue @('.mts', '.m2ts', '.avi', '.wmv', '.webm')
+    )
+    $isLegacySource = -not [string]::IsNullOrWhiteSpace($sourceExtension) -and $legacyExtensions -contains $sourceExtension
+    if ($isLegacySource) {
+        return [pscustomobject]@{
+            Action = 'Encode'
+            Reason = "Legacy source container $sourceExtension requires archive transcode"
+            OutputGroup = $outputGroup
+            SmartSkipApplied = $true
+            ProtectOutputFromSavingsDiscard = $true
         }
     }
 
@@ -81,11 +121,23 @@ function Get-EncodeDecision {
     }
 
     if ($null -ne $VideoInfo.SourceSizeMb -and $VideoInfo.SourceSizeMb -lt [double]$SmartSkip.skipSmallFilesMb) {
+        $encodeSmallModernFiles = [bool](Get-OptionalDecisionProperty -Object $SmartSkip -Name 'encodeSmallModernFiles' -DefaultValue $false)
+        if ($encodeSmallModernFiles) {
+            return [pscustomobject]@{
+                Action = 'Encode'
+                Reason = "Small modern source encoding enabled ($($VideoInfo.SourceSizeMb) MB below $($SmartSkip.skipSmallFilesMb) MB)"
+                OutputGroup = $outputGroup
+                SmartSkipApplied = $true
+                ProtectOutputFromSavingsDiscard = $true
+            }
+        }
+
         return [pscustomobject]@{
             Action = 'Skip'
             Reason = "Source is smaller than $($SmartSkip.skipSmallFilesMb) MB"
             OutputGroup = $outputGroup
             SmartSkipApplied = $true
+            ProtectOutputFromSavingsDiscard = $false
         }
     }
 

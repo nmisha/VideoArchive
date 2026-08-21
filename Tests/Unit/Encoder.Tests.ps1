@@ -125,6 +125,82 @@ exit /b 0
         ($job.Arguments -join ' ') | Should Match 'crf=20'
     }
 
+    It 'selects the configured archive container extension' {
+        (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MTS' -Container mp4) | Should Be '.mp4'
+        (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MTS' -Container mkv) | Should Be '.mkv'
+        (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MOV' -Container source) | Should Be '.mov'
+        (Get-ArchiveOutputExtension -SourcePath 'D:\camera\clip.MTS' -Container source) | Should Be '.mkv'
+    }
+
+    It 'configures Rigaya to convert only non-AAC audio tracks' {
+        $videoInfo = [pscustomobject]@{
+            IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 120
+            AudioTracks = @([pscustomobject]@{ Codec = 'AC-3'; Channels = 2 })
+        }
+        $audioConfig = [pscustomobject]@{ mode = 'aac'; aacBitrateKbps = 256 }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mts' -OutputFile 'D:\out.mp4' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -AudioConfig $audioConfig -RequestedBackend nvenc
+        $arguments = $job.Arguments -join ' '
+
+        $arguments | Should Match '--audio-codec aac'
+        $arguments | Should Match '--audio-encode-other-codec-only'
+        $arguments | Should Match '--audio-bitrate 256'
+        $arguments | Should Not Match '--audio-copy'
+    }
+
+    It 'selectively converts non-AAC tracks with FFmpeg' {
+        $videoInfo = [pscustomobject]@{
+            IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 120
+            AudioTracks = @(
+                [pscustomobject]@{ Codec = 'AC-3'; Channels = 2 },
+                [pscustomobject]@{ Codec = 'AAC'; Channels = 2 }
+            )
+        }
+        $audioConfig = [pscustomobject]@{ mode = 'aac'; aacBitrateKbps = 256 }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mkv' -OutputFile 'D:\out.mkv' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -AudioConfig $audioConfig -RequestedBackend software
+        $arguments = $job.Arguments -join ' '
+
+        $arguments | Should Match '-c:a:0 aac -b:a:0 256k'
+        $arguments | Should Not Match '-c:a:1 aac'
+    }
+
+    It 'uses each source audio bitrate with Rigaya when requested' {
+        $videoInfo = [pscustomobject]@{
+            IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 120
+            AudioTracks = @(
+                [pscustomobject]@{ Codec = 'AC-3'; Channels = 6; BitrateKbps = 448 },
+                [pscustomobject]@{ Codec = 'AAC'; Channels = 2; BitrateKbps = 192 }
+            )
+        }
+        $audioConfig = [pscustomobject]@{ mode = 'aac'; aacBitrateKbps = 'source' }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mts' -OutputFile 'D:\out.mp4' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -AudioConfig $audioConfig -RequestedBackend nvenc
+        $arguments = $job.Arguments -join ' '
+
+        $arguments | Should Match '--audio-bitrate 1\?448'
+        $arguments | Should Not Match '--audio-bitrate 2\?192'
+    }
+
+    It 'uses source audio bitrate with FFmpeg and falls back when it is unavailable' {
+        $videoInfo = [pscustomobject]@{
+            IsHdr = $false; Primaries = 'BT.709'; Transfer = 'BT.709'; Matrix = 'BT.709'; DurationSeconds = 120
+            AudioTracks = @(
+                [pscustomobject]@{ Codec = 'AC-3'; Channels = 6; BitrateKbps = 448 },
+                [pscustomobject]@{ Codec = 'DTS'; Channels = 2; BitrateKbps = $null },
+                [pscustomobject]@{ Codec = 'AAC'; Channels = 2; BitrateKbps = 192 }
+            )
+        }
+        $audioConfig = [pscustomobject]@{ mode = 'aac'; aacBitrateKbps = 'source' }
+
+        $job = New-EncodeJob -InputFile 'D:\in.mkv' -OutputFile 'D:\out.mkv' -VideoInfo $videoInfo -Tools $tools -Preset $preset -EncoderConfig $encoderConfig -AudioConfig $audioConfig -RequestedBackend software
+        $arguments = $job.Arguments -join ' '
+
+        $arguments | Should Match '-b:a:0 448k'
+        $arguments | Should Match '-b:a:1 256k'
+        $arguments | Should Not Match '-c:a:2 aac'
+    }
+
     It 'quotes Windows command line paths containing spaces' {
         $encoderModule = Get-Module Encoder
         $commandLine = & $encoderModule {

@@ -15,6 +15,7 @@
     "output":  {
                    "hdrSuffix":  "_HDR_Encoded",
                    "sdrSuffix":  "_SDR_Encoded",
+                   "container":  "mp4",
                    "logsFolder":  "Logs",
                    "tempFolder":  "Temp"
                },
@@ -23,9 +24,14 @@
                      "preserveWindowsTimestamps":  true,
                      "fileTimestampMode":  "captureDate"
                  },
+    "audio":  {
+                   "mode":  "aac",
+                   "aacBitrateKbps":  "source"
+               },
     "dates":  {
-    "timezoneMode":  "none",
-    "defaultTimezoneOffset":  "+03:00",
+    "timezoneMode":  "sourceOrZone",
+    "defaultTimezone":  "Europe/Moscow",
+    "unknownTimezonePolicy":  "keepLocal",
     "preferFileNameOverFileSystemDates":  true,
     "fileDateFallbackMode":  "disabled",
     "setAllCommonDateTags":  true,

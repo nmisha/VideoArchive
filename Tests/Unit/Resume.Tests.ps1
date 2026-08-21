@@ -128,6 +128,33 @@ Describe 'Resume' {
         $plan.SkippedFiles.Count | Should Be 0
     }
 
+    It 'does not treat an encoded MKV without its sidecar as completed' {
+        $sourceFile = Join-Path $tempRoot 'mkv_source.mts'
+        $outputFile = Join-Path $tempRoot 'mkv_output.mkv'
+        Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
+        Set-Content -LiteralPath $outputFile -Value 'output' -Encoding utf8
+        $sourceItem = Get-Item -LiteralPath $sourceFile
+        $historyRecord = [pscustomobject]@{
+            SourcePath = $sourceFile
+            OutputPath = $outputFile
+            Action = 'Encoded'
+            ValidationSuccess = $true
+            DryRun = $false
+            PresetName = 'Balanced'
+            SourceFileSizeBytes = $sourceItem.Length
+            SourceLastWriteTimeUtc = $sourceItem.LastWriteTimeUtc.ToString('o')
+            SourceCreationTimeUtc = $sourceItem.CreationTimeUtc.ToString('o')
+        }
+        $fileRecord = [pscustomobject]@{
+            Path = $sourceFile
+            SizeBytes = $sourceItem.Length
+            LastWriteTimeUtc = $sourceItem.LastWriteTimeUtc
+            CreationTimeUtc = $sourceItem.CreationTimeUtc
+        }
+
+        (Test-ResumeRecordCompleted -FileRecord $fileRecord -HistoryRecord $historyRecord -PresetName Balanced) | Should Be $false
+    }
+
     It 'ignores stale resume records when source fingerprint changed' {
         $sourceFile = Join-Path $tempRoot 'changed_source.mp4'
         Set-Content -LiteralPath $sourceFile -Value 'source' -Encoding utf8
