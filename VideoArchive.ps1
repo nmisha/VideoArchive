@@ -422,7 +422,7 @@ try {
     }
 
     $logger = Initialize-VideoArchiveLogger -LogRoot $config.Output.LogsFolder
-    Show-VideoArchiveBanner -Config $config
+    Show-VideoArchiveBanner -Config $config -RotationMode $RotationMode -RotationDegrees $resolvedRotationDegrees
     Write-VideoArchiveStatus -Message "Input : $resolvedInputPath"
     Write-VideoArchiveStatus -Message "Files : $(@($files).Count)"
     Write-VideoArchiveStatus -Message "Logs  : $($logger.TxtPath)"

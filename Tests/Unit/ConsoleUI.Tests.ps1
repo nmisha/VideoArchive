@@ -33,12 +33,24 @@ Describe 'ConsoleUI menus' {
     }
 
     It 'selects physical 270-degree rotation' {
-        foreach ($response in @('5', '1', '6', 'D:\Video\clip.mov')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
+        foreach ($response in @('5', '1', '6', '1', 'D:\Video\clip.mov')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
 
         $selection = Select-VideoArchiveMainMenu -PresetCatalog $catalog
 
         $selection.Advanced.RotationMode | Should Be 'physical'
         $selection.Advanced.RotationDegrees | Should Be 270
+        $selection.PresetName | Should Be 'Archive'
+    }
+
+    It 'uses Video rotation when Enter is pressed in Advanced mode' {
+        foreach ($response in @('5', '', '1', 'D:\Video\clip.mp4')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
+
+        $selection = Select-VideoArchiveMainMenu -PresetCatalog $catalog
+
+        $selection.Mode | Should Be 'advanced'
+        $selection.Advanced.Operation | Should Be 'rotation'
+        $selection.Advanced.RotationMode | Should Be 'metadata'
+        $selection.Advanced.RotationDegrees | Should Be 90
     }
 
     It 'continues to select a normal preset' {

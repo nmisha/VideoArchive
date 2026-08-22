@@ -84,13 +84,26 @@ function Show-VideoArchiveBanner {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [psobject]$Config
+        [psobject]$Config,
+
+        [ValidateSet('none', 'metadata', 'physical')]
+        [string]$RotationMode = 'none',
+
+        [ValidateSet(0, 90, 180, 270)]
+        [int]$RotationDegrees = 0
     )
 
     Complete-InlineTelemetry
     Write-Host ''
     Write-Host "$($Config.AppName) MVP v1.0" -ForegroundColor Cyan
-    Write-Host "Preset: $($Config.PresetName)" -ForegroundColor DarkCyan
+    if ($RotationMode -eq 'metadata') {
+        Write-Host 'Preset: n/a (metadata-only stream copy)' -ForegroundColor DarkCyan
+    } else {
+        Write-Host "Preset: $($Config.PresetName)" -ForegroundColor DarkCyan
+    }
+    if ($RotationMode -ne 'none') {
+        Write-Host ("Operation: {0} rotation {1} degrees clockwise" -f $RotationMode, $RotationDegrees) -ForegroundColor DarkCyan
+    }
     Write-Host ''
 }
 
@@ -134,13 +147,19 @@ function Select-VideoArchivePreset {
 
 function Select-VideoArchiveAdvancedOperation {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$PresetCatalog
+    )
 
     Complete-InlineTelemetry
     Write-Host 'Advanced mode:' -ForegroundColor Cyan
     Write-Host '1. Video rotation'
     Write-Host ''
-    $operationSelection = Read-Host 'Select operation (1)'
+    $operationSelection = Read-Host 'Select operation (1) or press Enter for Video rotation'
+    if ([string]::IsNullOrWhiteSpace($operationSelection)) {
+        $operationSelection = '1'
+    }
     if ($operationSelection.Trim() -ne '1') {
         throw "Invalid Advanced operation selection: $operationSelection"
     }
@@ -167,16 +186,25 @@ function Select-VideoArchiveAdvancedOperation {
         throw "Invalid rotation selection: $rotationSelection"
     }
 
+    $choice = $rotationChoices[$parsedRotationIndex - 1]
+    $presetName = if ($choice.Mode -eq 'physical') {
+        Write-Host ''
+        Write-Host 'Physical rotation re-encodes the video. Select an encoding preset.' -ForegroundColor Yellow
+        Select-VideoArchivePreset -PresetCatalog $PresetCatalog
+    } else {
+        $PresetCatalog.DefaultPreset
+    }
+
     $inputPath = Read-Host 'Enter path to video file'
     if ([string]::IsNullOrWhiteSpace($inputPath)) {
         throw 'Video file path is required for Advanced rotation.'
     }
 
-    $choice = $rotationChoices[$parsedRotationIndex - 1]
     return [pscustomobject]@{
         Operation = 'rotation'
         RotationMode = $choice.Mode
         RotationDegrees = $choice.Degrees
+        PresetName = $presetName
         InputPath = $inputPath
     }
 }
@@ -211,10 +239,11 @@ function Select-VideoArchiveMainMenu {
             return [pscustomobject]@{ Mode = 'preset'; PresetName = $PresetCatalog.Presets[$parsedIndex - 1].Name; Advanced = $null }
         }
         if ($parsedIndex -eq $advancedIndex) {
+            $advanced = Select-VideoArchiveAdvancedOperation -PresetCatalog $PresetCatalog
             return [pscustomobject]@{
                 Mode = 'advanced'
-                PresetName = $PresetCatalog.DefaultPreset
-                Advanced = Select-VideoArchiveAdvancedOperation
+                PresetName = $advanced.PresetName
+                Advanced = $advanced
             }
         }
     }
@@ -226,10 +255,11 @@ function Select-VideoArchiveMainMenu {
     }
 
     if ($selection.Trim() -ieq 'Advanced') {
+        $advanced = Select-VideoArchiveAdvancedOperation -PresetCatalog $PresetCatalog
         return [pscustomobject]@{
             Mode = 'advanced'
-            PresetName = $PresetCatalog.DefaultPreset
-            Advanced = Select-VideoArchiveAdvancedOperation
+            PresetName = $advanced.PresetName
+            Advanced = $advanced
         }
     }
 
