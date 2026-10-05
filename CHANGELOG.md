@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Normalize existing writable date/time metadata and canonical EXIF/XMP/QuickTime dates to one capture instant; clear stale EXIF subseconds and replace offsets. Time-shift remux also replaces common textual date aliases.
+
 - Added Advanced capture time shift for folders and CLI `-TimeShift`: signed offsets, recursive stream-copy remux, separate outputs, dry run, and corrected capture/file dates without re-encoding.
 
 ## 3.0.0

@@ -108,3 +108,6 @@
 ## Advanced time shift
 
 - [x] Add signed capture-date shift, lossless folder remux, tests and documentation.
+
+## Unified capture timestamps
+- [x] Normalize container, track, EXIF/XMP and filesystem timestamps to one capture instant.

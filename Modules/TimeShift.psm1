@@ -23,7 +23,13 @@ function Invoke-TimeShiftRemux {
     $arguments = @('-hide_banner', '-loglevel', 'error', '-nostdin', '-n',
         '-i', $SourcePath, '-map', '0', '-map_metadata', '0', '-map_chapters', '0',
         '-c', 'copy', '-metadata', "creation_time=$CreationTime",
-        '-metadata:s', "creation_time=$CreationTime", $OutputPath)
+        '-metadata:s', "creation_time=$CreationTime")
+    # Replace common textual aliases as well as the container creation field.
+    # Otherwise copied Matroska / Apple tags may still expose the old date.
+    foreach ($tag in @('date', 'DATE_RECORDED', 'DATE_ENCODED', 'DATE_TAGGED', 'com.apple.quicktime.creationdate')) {
+        $arguments += @('-metadata', "$tag=$CreationTime", '-metadata:s', "$tag=$CreationTime")
+    }
+    $arguments += $OutputPath
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'

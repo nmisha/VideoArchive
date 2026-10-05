@@ -23,6 +23,8 @@ $global:LASTEXITCODE = 0
         ($global:TimeShiftArguments -join '|') | Should Match '\|-map\|0\|'
         ($global:TimeShiftArguments -join '|') | Should Match '\|-c\|copy\|'
         ($global:TimeShiftArguments -join '|') | Should Match 'creation_time=2026-01-01T12:00:00Z'
+        ($global:TimeShiftArguments -join '|') | Should Match 'DATE_ENCODED=2026-01-01T12:00:00Z'
+        ($global:TimeShiftArguments -join '|') | Should Match 'com.apple.quicktime.creationdate=2026-01-01T12:00:00Z'
         Remove-Variable TimeShiftArguments -Scope Global
     }
     It 'rejects failed remuxes' {

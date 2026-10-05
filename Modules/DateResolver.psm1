@@ -538,15 +538,43 @@ function Set-VideoCaptureDate {
             "-XMP:ModifyDate=$localDateText"
         )
     }
-    if ($CorrectOriginalDate) {
+    if ($CorrectOriginalDate -or $SetAllCommonDateTags) {
         $originalText = if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) { $CaptureDateTimeOffset.ToString('yyyy:MM:dd HH:mm:sszzz') } else { $localDateText }
-        $args += @("-EXIF:DateTimeOriginal=$originalText", "-XMP:DateTimeOriginal=$originalText")
+        $offsetText = if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) { $CaptureDateTimeOffset.ToString('zzz') } else { '' }
+        # EXIF stores wall-clock values and offsets separately. Clear copied
+        # subseconds so an old fractional timestamp cannot override this date.
+        $args += @(
+            "-EXIF:AllDates=$localDateText"
+            "-EXIF:OffsetTime=$offsetText"
+            "-EXIF:OffsetTimeOriginal=$offsetText"
+            "-EXIF:OffsetTimeDigitized=$offsetText"
+            '-EXIF:SubSecTime='
+            '-EXIF:SubSecTimeOriginal='
+            '-EXIF:SubSecTimeDigitized='
+            "-XMP:DateTimeOriginal=$originalText"
+            "-XMP:DateTimeDigitized=$originalText"
+            "-XMP:MetadataDate=$originalText"
+            "-XMP:DateCreated=$originalText"
+            "-QuickTime:CreationDate=$originalText"
+            "-QuickTime:ContentCreateDate=$originalText"
+            "-QuickTime:DateTimeOriginal=$originalText"
+        )
     }
     $args += $Path
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
+        if ($CorrectOriginalDate -or $SetAllCommonDateTags) {
+            # First update every existing writable date/time tag, including
+            # less common camera/XMP tags. The explicit pass below creates the
+            # canonical tags and handles unknown timezone and EXIF offsets.
+            $normalizeArgs = @('-overwrite_original', '-wm', 'w', '-api', 'QuickTimeUTC=1', "-Time:All=$originalText", $Path)
+            $normalizeOutput = & $ExifToolPath @normalizeArgs 2>&1 | ForEach-Object { $_.ToString() } | Out-String
+            if ($LASTEXITCODE -ne 0 -or $normalizeOutput -match '(?im)^\s*Error:') {
+                throw "ExifTool date normalization failed for '$Path': $normalizeOutput"
+            }
+        }
         $output = & $ExifToolPath @args 2>&1 | ForEach-Object { $_.ToString() } | Out-String
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference

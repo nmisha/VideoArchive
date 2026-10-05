@@ -219,6 +219,14 @@ exit 0
 
         $arguments | Should Match 'QuickTime:CreateDate=2012:09:01 18:08:13'
         $arguments | Should Match 'Keys:CreationDate=2012:09:01 22:08:13\+04:00'
+        $arguments | Should Match 'QuickTime:TrackModifyDate=2012:09:01 18:08:13'
+        $arguments | Should Match 'QuickTime:MediaModifyDate=2012:09:01 18:08:13'
+        $arguments | Should Match 'QuickTime:ContentCreateDate=2012:09:01 22:08:13\+04:00'
+        $arguments | Should Match 'QuickTime:DateTimeOriginal=2012:09:01 22:08:13\+04:00'
+        $arguments | Should Match 'EXIF:AllDates=2012:09:01 22:08:13'
+        $arguments | Should Match 'EXIF:OffsetTimeOriginal=\+04:00'
+        $arguments | Should Match 'EXIF:SubSecTimeOriginal='
+        $arguments | Should Match 'XMP:MetadataDate=2012:09:01 22:08:13\+04:00'
     }
 
     It 'falls back to file name when metadata date is invalid' {
