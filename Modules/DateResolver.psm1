@@ -230,6 +230,7 @@ function Get-VideoDateFromMetadata {
 
     $args = @(
         '-j'
+        '-G0'
         '-QuickTime:MediaCreateDate'
         '-QuickTime:CreateDate'
         '-QuickTime:TrackCreateDate'
@@ -265,6 +266,8 @@ function Get-VideoDateFromMetadata {
         @{ Name = 'EXIF:CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'EXIF:CreateDate') }
         @{ Name = 'XMP:CreateDate'; Value = (Get-ExifJsonValue -Object $item -Name 'XMP:CreateDate') }
         @{ Name = 'Keys:CreationDate'; Value = (Get-ExifJsonValue -Object $item -Name 'Keys:CreationDate') }
+        @{ Name = 'QuickTime:CreationDate'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:CreationDate') }
+        @{ Name = 'QuickTime:DateTimeOriginal'; Value = (Get-ExifJsonValue -Object $item -Name 'QuickTime:DateTimeOriginal') }
     )
 
     $orderedCandidates = @($candidates | Where-Object { [string]$_.Value -match '(?:Z|[+\-]\d{2}:?\d{2})$' })
@@ -272,8 +275,24 @@ function Get-VideoDateFromMetadata {
     foreach ($candidate in $orderedCandidates) {
         $rawValue = [string]$candidate.Value
         $parsedDate = ConvertTo-CaptureDateValue -Value $rawValue
+        # Integer QuickTime timestamps are UTC even when ExifTool displays
+        # them without a suffix. Never attach a local offset to that clock value.
+        $isQuickTimeUtc = $candidate.Name -match '^(QuickTime:(MediaCreateDate|CreateDate|TrackCreateDate|ModifyDate)|MediaCreateDate|TrackCreateDate)$'
+        if ($null -ne $parsedDate.DateTime -and -not $parsedDate.HasTimezone -and $isQuickTimeUtc) {
+            $instant = [datetimeoffset]::new([datetime]::SpecifyKind($parsedDate.DateTime, [DateTimeKind]::Unspecified), [timespan]::Zero)
+            $mode = if ($null -ne $DateConfig -and $null -ne $DateConfig.PSObject.Properties['timezoneMode']) { [string]$DateConfig.timezoneMode } else { 'sourceOnly' }
+            if ($mode -eq 'sourceOrZone') {
+                $zone = Get-CaptureDateTimeZone -DateConfig $DateConfig
+                if ($null -ne $zone) { $instant = [TimeZoneInfo]::ConvertTime($instant, $zone) }
+            }
+            $parsedDate = [pscustomobject]@{ DateTime = $instant.DateTime; DateTimeOffset = $instant; HasTimezone = $true }
+        }
         if (Test-IsValidCaptureDate -Date $parsedDate.DateTime -RawValue $rawValue -FileNameDate $FileNameDate) {
             $result = New-CaptureDateResult -Success $true -DateTime $parsedDate.DateTime -Source 'Metadata' -Pattern $candidate.Name -Warnings @() -DateTimeOffset $parsedDate.DateTimeOffset -HasTimezone:$parsedDate.HasTimezone -TimezoneSource $(if ($parsedDate.HasTimezone) { 'SourceMetadata' } else { 'Unknown' })
+            if ($isQuickTimeUtc -and $rawValue -notmatch '(?:Z|[+\-]\d{2}:?\d{2})$') {
+                $result.TimezoneSource = 'QuickTimeUTC'
+                if ($mode -eq 'sourceOrZone' -and $null -ne $zone) { $result.TimezoneId = $zone.Id }
+            }
             return Add-CaptureDateTimezone -Result $result -DateConfig $DateConfig
         }
     }

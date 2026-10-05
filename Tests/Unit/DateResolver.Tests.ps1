@@ -12,6 +12,32 @@ Describe 'DateResolver' {
         }
     }
 
+    It 'converts suffix-less QuickTime UTC to Moscow without losing three hours' {
+        $toolPath = Join-Path $tempRoot 'quicktime-utc.ps1'
+        @'
+Write-Output '[{"QuickTime:MediaCreateDate":"2026:09:20 08:08:13"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding UTF8
+        $config = [pscustomobject]@{ timezoneMode = 'sourceOrZone'; defaultTimezone = 'Europe/Moscow' }
+        $result = Get-VideoDateFromMetadata -Path 'VID_20260920_110813.mp4' -ExifToolPath $toolPath -DateConfig $config
+        $result.DateTimeOffset.ToString('o') | Should Be '2026-09-20T11:08:13.0000000+03:00'
+        $result.DateTimeOffset.UtcDateTime.ToString('s') | Should Be '2026-09-20T08:08:13'
+        $config.timezoneMode = 'sourceOnly'
+        $result = Get-VideoDateFromMetadata -Path 'clip.mp4' -ExifToolPath $toolPath -DateConfig $config
+        $result.DateTimeOffset.ToString('o') | Should Be '2026-09-20T08:08:13.0000000+00:00'
+    }
+
+    It 'preserves a grouped QuickTime textual offset ahead of integer UTC' {
+        $toolPath = Join-Path $tempRoot 'quicktime-offset.ps1'
+        @'
+Write-Output '[{"QuickTime:MediaCreateDate":"2026:09:20 08:08:13","QuickTime:CreationDate":"2026:09:20 12:08:13+04:00"}]'
+exit 0
+'@ | Set-Content -LiteralPath $toolPath -Encoding UTF8
+        $config = [pscustomobject]@{ timezoneMode = 'sourceOrZone'; defaultTimezone = 'Europe/Moscow' }
+        $result = Get-VideoDateFromMetadata -Path 'clip.mp4' -ExifToolPath $toolPath -DateConfig $config
+        $result.DateTimeOffset.ToString('o') | Should Be '2026-09-20T12:08:13.0000000+04:00'
+    }
+
     It 'parses common filename patterns' {
         $examples = @(
             @{ Name = 'VID_20260705_123141.mp4'; Expected = '2026-07-05T12:31:41'; Pattern = 'VID_yyyyMMdd_HHmmss' }

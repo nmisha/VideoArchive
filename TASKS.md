@@ -114,3 +114,6 @@
 
 ## Time shift input selection
 - [x] Accept a single video file as well as a folder, using the existing scanner.
+
+## QuickTime UTC capture dates
+- [x] Preserve UTC semantics when resolving integer QuickTime dates without a textual offset.

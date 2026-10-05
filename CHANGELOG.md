@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed double timezone conversion for integer QuickTime dates without an explicit offset: resolve them as UTC, then convert to the configured display timezone while preserving the instant.
+
 - Allow Advanced time shift to process a single video file as well as a folder, using the same output directory policy as the main workflow.
 
 - Normalize existing writable date/time metadata and canonical EXIF/XMP/QuickTime dates to one capture instant; clear stale EXIF subseconds and replace offsets. Time-shift remux also replaces common textual date aliases.
