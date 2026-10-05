@@ -155,18 +155,18 @@ function Select-VideoArchiveAdvancedOperation {
     Complete-InlineTelemetry
     Write-Host 'Advanced mode:' -ForegroundColor Cyan
     Write-Host '1. Video rotation'
-    Write-Host '2. Capture time shift (folder, no re-encoding)'
+    Write-Host '2. Capture time shift (file or folder, no re-encoding)'
     Write-Host ''
     $operationSelection = Read-Host 'Select operation (1-2) or press Enter for Video rotation'
     if ([string]::IsNullOrWhiteSpace($operationSelection)) {
         $operationSelection = '1'
     }
     if ($operationSelection.Trim() -eq '2') {
-        $folder = Read-Host 'Enter path to video folder'
-        if ([string]::IsNullOrWhiteSpace($folder)) { throw 'Video folder path is required.' }
+        $shiftPath = Read-Host 'Enter path to video file or folder'
+        if ([string]::IsNullOrWhiteSpace($shiftPath)) { throw 'Video file or folder path is required.' }
         $shift = Read-Host 'Enter signed capture time shift (+HH:MM:SS or -HH:MM:SS)'
         return [pscustomobject]@{
-            Operation = 'timeShift'; InputPath = $folder; TimeShift = $shift
+            Operation = 'timeShift'; InputPath = $shiftPath; TimeShift = $shift
             PresetName = $PresetCatalog.DefaultPreset
         }
     }

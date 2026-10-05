@@ -362,18 +362,19 @@ try {
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
     if (-not [string]::IsNullOrWhiteSpace($TimeShift)) {
         $shift = ConvertTo-VideoTimeShift -Value $TimeShift
-        $folder = Normalize-InputPath -Path $InputPath
-        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw 'Time shift requires an existing folder.' }
+        $shiftInputPath = Normalize-InputPath -Path $InputPath
+        if (-not (Test-Path -LiteralPath $shiftInputPath)) { throw 'Time shift requires an existing video file or folder.' }
         foreach ($toolPath in @($config.Tools.Ffmpeg, $config.Tools.ExifTool)) {
             if ([string]::IsNullOrWhiteSpace($toolPath) -or -not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
                 throw "Time shift requires FFmpeg and ExifTool. Missing tool: $toolPath"
             }
         }
-        $folder = (Get-Item -LiteralPath $folder).FullName.TrimEnd('\')
-        if ($folder -match '^[a-zA-Z]:$') { throw 'Select a folder below the drive root for time shift.' }
+        $inputItem = Get-Item -LiteralPath $shiftInputPath
+        $folder = if ($inputItem.PSIsContainer) { $inputItem.FullName.TrimEnd('\') } else { $inputItem.DirectoryName.TrimEnd('\') }
+        if ($folder -match '^[a-zA-Z]:$') { throw 'Select a file or folder below the drive root for time shift.' }
         $outputRoot = $folder + '_TimeShifted'
         $failures = 0
-        $files = @(Get-VideoFiles -InputPath $folder -Extensions $config.Extensions)
+        $files = @(Get-VideoFiles -InputPath $shiftInputPath -Extensions $config.Extensions)
         foreach ($file in $files) {
             $temp = $null
             try {

@@ -40,6 +40,14 @@ Describe 'ConsoleUI menus' {
         $selection.Advanced.TimeShift | Should Be '-03:00:00'
     }
 
+    It 'accepts a single file for capture time shift' {
+        foreach ($response in @('5', '2', '"D:\My Video\clip.mp4"', '+01:00:00')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
+        $selection = Select-VideoArchiveMainMenu -PresetCatalog $catalog
+        $selection.Advanced.Operation | Should Be 'timeShift'
+        $selection.Advanced.InputPath | Should Be '"D:\My Video\clip.mp4"'
+        $selection.Advanced.TimeShift | Should Be '+01:00:00'
+    }
+
     It 'selects physical 270-degree rotation' {
         foreach ($response in @('5', '1', '6', '1', 'D:\Video\clip.mov')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
 

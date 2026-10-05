@@ -111,3 +111,6 @@
 
 ## Unified capture timestamps
 - [x] Normalize container, track, EXIF/XMP and filesystem timestamps to one capture instant.
+
+## Time shift input selection
+- [x] Accept a single video file as well as a folder, using the existing scanner.
