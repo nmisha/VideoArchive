@@ -1,6 +1,8 @@
 # VideoArchive
 
-VideoArchive is a PowerShell-based video archiving utility that uses NVIDIA NVENC through `NVEncC`.
+VideoArchive is a PowerShell-based video archiving utility with NVEncC, QSVEncC, VCEEncC, and FFmpeg/libx265 backends.
+
+Полное русскоязычное описание установки, меню, GUI, всех CLI-параметров и каждого поля конфигурации находится в [руководстве пользователя](Docs/UserGuide.ru.md).
 
 The project started as an HDR video archiver, but the current architecture is generic enough for phones, cameras, drones, action cameras, exports, and mixed home archives.
 
@@ -8,14 +10,14 @@ The project started as an HDR video archiver, but the current architecture is ge
 
 - Recursively processes a file or folder.
 - Uses `MediaInfo` for video analysis only.
-- Uses `NVEncC` for encoding only.
+- Uses the selected NVEncC, QSVEncC, VCEEncC, or FFmpeg backend for encoding.
 - Supports multiple encoder backends: `NVEncC`, `QSVEncC`, `VCEEncC`, and software `FFmpeg + libx265`.
 - Uses `ExifTool` for metadata copy and capture-date restoration only.
 - Detects `HDR Vivid`, `Dolby Vision`, `HDR10+`, `HLG`, `PQ`, and `SDR`.
 - Encodes HDR to HEVC Main10 10-bit.
 - Encodes SDR to HEVC Main 8-bit.
 - Preserves source resolution and FPS.
-- Copies audio without re-encoding by default; optional AAC mode converts only non-AAC tracks.
+- Supports audio copy and selective AAC conversion; the shipped config converts only non-AAC tracks to AAC.
 - Splits outputs into `_HDR_Encoded` and `_SDR_Encoded`.
 - Selects the output container through `output.container` (`mp4` by default, `mkv`, or `source`).
 - Stores capture dates inside MP4; MKV outputs receive a validated `.metadata.json` sidecar.
@@ -103,12 +105,12 @@ Audio behavior is configured independently:
 
 ```json
 "audio": {
-  "mode": "copy",
-  "aacBitrateKbps": 256
+  "mode": "aac",
+  "aacBitrateKbps": "source"
 }
 ```
 
-- `copy` (default): copy every audio track without re-encoding.
+- `copy`: copy every audio track without re-encoding. It is also the compatibility fallback if the whole `audio` section is absent.
 - `aac`: keep existing AAC tracks in copy mode and convert only non-AAC tracks to AAC at the configured bitrate.
 - `aacBitrateKbps` accepts a positive number or `"source"`. In `"source"` mode, each converted track uses its own source bitrate reported by MediaInfo; if that bitrate is unavailable, VideoArchive uses 256 kbps.
 
@@ -166,17 +168,17 @@ VideoArchive/
 
 ## Requirements
 
-Place these tools in the project directory:
+Place the required metadata/analysis tools in the project directory:
 
 ```text
-NVEncC/NVEncC64.exe
 ExifTool/exiftool.exe
 MediaInfo/MediaInfo.exe
 ```
 
-Optional backends:
+Install at least one encoder backend:
 
 ```text
+NVEncC/NVEncC64.exe
 QSVEncC/QSVEncC64.exe
 VCEEncC/VCEEncC64.exe
 FFmpeg/ffmpeg.exe
