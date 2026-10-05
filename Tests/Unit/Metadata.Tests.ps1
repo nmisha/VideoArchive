@@ -1,6 +1,11 @@
 Import-Module "$PSScriptRoot\..\..\Modules\Metadata.psm1" -Force
 
 Describe 'Metadata' {
+    It 'marks a QuickTime-derived DateTaken as UTC while keeping raw container fields' {
+        $result = ConvertFrom-ExifToolJson -ExifToolJson '[{"MediaCreateDate":"2026:09:20 08:08:13"}]'
+        $result.DateTaken | Should Be '2026-09-20T08:08:13Z'
+        $result.QuickTimeMediaCreateDate | Should Be '2026-09-20T08:08:13'
+    }
     It 'extracts GPS and Date Taken from ExifTool JSON' {
         $sample = @'
 [

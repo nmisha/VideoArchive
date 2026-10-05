@@ -1,4 +1,20 @@
 Import-Module "$PSScriptRoot\..\..\Modules\Validator.psm1" -Force
+Import-Module "$PSScriptRoot\..\..\Modules\Metadata.psm1" -Force
+
+Describe 'Metadata capture instant comparison' {
+    It 'accepts QuickTime UTC and an equivalent local date from real snapshot parsing' {
+        $source = ConvertFrom-ExifToolJson -ExifToolJson '[{"MediaCreateDate":"2026:09:20 08:08:13"}]'
+        $output = ConvertFrom-ExifToolJson -ExifToolJson '[{"CreationDate":"2026:09:20 11:08:13+03:00","MediaCreateDate":"2026:09:20 08:08:13"}]'
+        $errors = & (Get-Module Validator) { param($s, $o) @(Test-MetadataPreserved -SourceMetadata $s -OutputMetadata $o) } $source $output
+        @($errors).Count | Should Be 0
+    }
+    It 'rejects a real three-hour shift despite matching wall clocks' {
+        $source = [pscustomobject]@{ DateTaken = '2026-09-20T08:08:13Z'; HasGps = $false }
+        $output = [pscustomobject]@{ DateTaken = '2026-09-20T08:08:13+03:00'; HasGps = $false }
+        $errors = & (Get-Module Validator) { param($s, $o) @(Test-MetadataPreserved -SourceMetadata $s -OutputMetadata $o) } $source $output
+        ($errors -join ' ') | Should Match 'DateTaken mismatch'
+    }
+}
 
 Describe 'Validator' {
     BeforeAll {

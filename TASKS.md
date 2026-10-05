@@ -117,3 +117,6 @@
 
 ## QuickTime UTC capture dates
 - [x] Preserve UTC semantics when resolving integer QuickTime dates without a textual offset.
+
+## Post-encode date validation
+- [x] Compare capture instants with explicit QuickTime UTC provenance rather than date strings.

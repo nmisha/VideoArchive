@@ -87,7 +87,14 @@ function ConvertFrom-ExifToolJson {
     $exifDateTimeOriginal = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('EXIF:DateTimeOriginal', 'DateTimeOriginal'))
     $xmpCreateDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('XMP:CreateDate'))
     $keysCreationDate = ConvertTo-NormalizedMetadataDate (Get-ExifToolValue -Object $item -Names @('Keys:CreationDate', 'CreationDate'))
-    $dateCandidates = @($exifDateTimeOriginal, $keysCreationDate, $xmpCreateDate, $quickTimeMediaCreateDate, $quickTimeCreateDate, $quickTimeTrackCreateDate) |
+    # Keep the raw QuickTime fields for container validation, but mark their
+    # UTC semantics when they supply the generic DateTaken value.
+    $quickTimeDateCandidates = @($quickTimeMediaCreateDate, $quickTimeCreateDate, $quickTimeTrackCreateDate) | ForEach-Object {
+        if (-not [string]::IsNullOrWhiteSpace($_)) {
+            if ($_ -match '(?:Z|[+\-]\d{2}:?\d{2})$') { $_ } else { $_ + 'Z' }
+        }
+    }
+    $dateCandidates = @($exifDateTimeOriginal, $keysCreationDate, $xmpCreateDate) + @($quickTimeDateCandidates) |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     $dateTaken = $dateCandidates | Where-Object { [string]$_ -match '(?:Z|[+\-]\d{2}:?\d{2})$' } | Select-Object -First 1
     if ([string]::IsNullOrWhiteSpace([string]$dateTaken)) { $dateTaken = $dateCandidates | Select-Object -First 1 }

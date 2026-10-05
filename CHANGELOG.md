@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed post-encode DateTaken validation: QuickTime-derived snapshot dates carry UTC semantics, and date preservation compares instants instead of strings. Equivalent UTC/local representations pass; real timezone shifts still fail.
+
 - Fixed double timezone conversion for integer QuickTime dates without an explicit offset: resolve them as UTC, then convert to the configured display timezone while preserving the instant.
 
 - Allow Advanced time shift to process a single video file as well as a folder, using the same output directory policy as the main workflow.

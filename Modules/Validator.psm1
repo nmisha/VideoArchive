@@ -65,6 +65,26 @@ function Resolve-ComparableColorValue {
     }
 }
 
+function Test-MetadataDateEquivalent {
+    param([string]$Actual, [string]$Expected)
+
+    if ([string]::IsNullOrWhiteSpace($Actual) -or [string]::IsNullOrWhiteSpace($Expected)) { return $false }
+    $offsetPattern = '(?:Z|[+\-]\d{2}:?\d{2})$'
+    try {
+        if ($Actual -match $offsetPattern -and $Expected -match $offsetPattern) {
+            $actualDate = [datetimeoffset]::Parse($Actual, [Globalization.CultureInfo]::InvariantCulture)
+            $expectedDate = [datetimeoffset]::Parse($Expected, [Globalization.CultureInfo]::InvariantCulture)
+            return [math]::Abs(($actualDate.UtcDateTime - $expectedDate.UtcDateTime).TotalSeconds) -le 1
+        }
+        # An unknown timezone cannot be inferred from the machine timezone.
+        # Compare wall clocks here; Test-CaptureDateValidation checks the
+        # resolved offset separately when one is available.
+        $actualDate = [datetime]::Parse(($Actual -replace $offsetPattern, ''), [Globalization.CultureInfo]::InvariantCulture)
+        $expectedDate = [datetime]::Parse(($Expected -replace $offsetPattern, ''), [Globalization.CultureInfo]::InvariantCulture)
+        return [math]::Abs(($actualDate - $expectedDate).TotalSeconds) -le 1
+    } catch { return $false }
+}
+
 function Test-MetadataPreserved {
     [CmdletBinding()]
     param(
@@ -86,7 +106,7 @@ function Test-MetadataPreserved {
     }
 
     if (-not [string]::IsNullOrWhiteSpace([string]$SourceMetadata.DateTaken)) {
-        if (-not (Test-StringEquivalentNormalized -Actual $OutputMetadata.DateTaken -Expected $SourceMetadata.DateTaken)) {
+        if (-not (Test-MetadataDateEquivalent -Actual $OutputMetadata.DateTaken -Expected $SourceMetadata.DateTaken)) {
             $dateTakenIsMissing = [string]::IsNullOrWhiteSpace([string]$OutputMetadata.DateTaken)
             if (-not ($AllowMissingDateTaken -and $dateTakenIsMissing)) {
                 $errors.Add("DateTaken mismatch: '$($SourceMetadata.DateTaken)' -> '$($OutputMetadata.DateTaken)'")
