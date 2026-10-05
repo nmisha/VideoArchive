@@ -104,3 +104,7 @@
 - [ ] Run history browser.
 - [ ] Log viewer.
 - [ ] Preset editing from UI.
+
+## Advanced time shift
+
+- [x] Add signed capture-date shift, lossless folder remux, tests and documentation.

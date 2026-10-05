@@ -132,7 +132,7 @@ Rotation can be selected in the GUI under **Advanced — Rotation**, passed on t
 - `physical`: physically rotates decoded pixels and re-encodes the video. Audio follows the normal audio policy. The output rotation metadata is cleared.
 - `rotationDegrees`: clockwise additional rotation: `0`, `90`, `180`, or `270`. Existing source rotation is composed with the requested angle.
 
-When `VideoArchive.cmd` is started without command-line parameters, the four presets are followed by item `5. Advanced`. Its current operation is `Video rotation`: select metadata or physical rotation and an angle, then enter the source file path. Physical rotation additionally asks for an encoding preset; metadata-only rotation does not use a preset.
+When `VideoArchive.cmd` is started without command-line parameters, the four presets are followed by item `5. Advanced`. Choose `Video rotation` or `Capture time shift`. Rotation asks for a file and angle; physical rotation also asks for an encoding preset. Time shift asks for a folder and signed `HH:MM:SS` offset, then remuxes recursively with FFmpeg stream copy into a sibling `_TimeShifted` folder, preserving originals. CLI: `./VideoArchive.ps1 -InputPath 'D:\Video' -TimeShift '-03:00:00'` (supports `-DryRun`). MP4/MOV/M4V/MKV retain their containers; other inputs gain a `.mkv` extension. Requires FFmpeg and ExifTool. See the Russian user guide for date and metadata handling.
 
 Smart Skip cannot suppress a requested rotation, and the rotated output is protected from the minimum-savings discard rule. An already existing valid output is still skipped unless `-Force` or `-NoSmartSkip` is used.
 

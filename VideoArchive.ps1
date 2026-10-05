@@ -15,7 +15,8 @@
     [ValidateSet('config', 'none', 'metadata', 'physical')]
     [string]$RotationMode = 'config',
     [ValidateSet('config', '0', '90', '180', '270')]
-    [string]$RotationDegrees = 'config'
+    [string]$RotationDegrees = 'config',
+    [string]$TimeShift
 )
 
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -31,6 +32,7 @@ $moduleRoot = Join-Path -Path $projectRoot -ChildPath 'Modules'
 $requiredModules = @(
     'Config.psm1',
     'Scanner.psm1',
+    'TimeShift.psm1',
     'MediaAnalyzer.psm1',
     'DecisionEngine.psm1',
     'Encoder.psm1',
@@ -338,18 +340,79 @@ function Get-ReadableErrorMessage {
 }
 
 try {
+    if (-not [string]::IsNullOrWhiteSpace($TimeShift) -and [string]::IsNullOrWhiteSpace($Preset)) {
+        $Preset = (Get-VideoArchivePresetCatalog -ProjectRoot $projectRoot).DefaultPreset
+    }
     if ([string]::IsNullOrWhiteSpace($Preset)) {
         $presetCatalog = Get-VideoArchivePresetCatalog -ProjectRoot $projectRoot
         $menuSelection = Select-VideoArchiveMainMenu -PresetCatalog $presetCatalog
         $Preset = $menuSelection.PresetName
         if ($menuSelection.Mode -eq 'advanced') {
+            if ($menuSelection.Advanced.Operation -eq 'timeShift') {
+                $TimeShift = [string]$menuSelection.Advanced.TimeShift
+                if ([string]::IsNullOrWhiteSpace($TimeShift)) { throw 'Time shift is required.' }
+            } else {
             $RotationMode = [string]$menuSelection.Advanced.RotationMode
             $RotationDegrees = [string]$menuSelection.Advanced.RotationDegrees
+            }
             $InputPath = [string]$menuSelection.Advanced.InputPath
         }
     }
 
     $config = Import-VideoArchiveConfig -ProjectRoot $projectRoot -PresetName $Preset
+    if (-not [string]::IsNullOrWhiteSpace($TimeShift)) {
+        $shift = ConvertTo-VideoTimeShift -Value $TimeShift
+        $folder = Normalize-InputPath -Path $InputPath
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { throw 'Time shift requires an existing folder.' }
+        foreach ($toolPath in @($config.Tools.Ffmpeg, $config.Tools.ExifTool)) {
+            if ([string]::IsNullOrWhiteSpace($toolPath) -or -not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
+                throw "Time shift requires FFmpeg and ExifTool. Missing tool: $toolPath"
+            }
+        }
+        $folder = (Get-Item -LiteralPath $folder).FullName.TrimEnd('\')
+        if ($folder -match '^[a-zA-Z]:$') { throw 'Select a folder below the drive root for time shift.' }
+        $outputRoot = $folder + '_TimeShifted'
+        $failures = 0
+        $files = @(Get-VideoFiles -InputPath $folder -Extensions $config.Extensions)
+        foreach ($file in $files) {
+            $temp = $null
+            try {
+                $date = Resolve-VideoCaptureDate -Path $file.Path -ExifToolPath $config.Tools.ExifTool -DateConfig $config.Dates
+                if (-not $date.Success) { throw 'Capture date could not be determined; file left unchanged.' }
+                $date.DateTime = $date.DateTime.Add($shift)
+                if ($date.HasTimezone) { $date.DateTimeOffset = $date.DateTimeOffset.Add($shift) }
+                $destination = Join-Path $outputRoot $file.RelativePath
+                # Other containers may not store a capture date reliably; use Matroska.
+                if ($file.Extension -notin @('.mp4', '.mov', '.m4v', '.mkv')) { $destination += '.mkv' }
+                if (Test-Path -LiteralPath $destination) { throw "Output already exists: $destination" }
+                Write-Host ("{0}: {1} -> {2}" -f $file.RelativePath, $TimeShift, $date.DateTime.ToString('s'))
+                if ($DryRun) { continue }
+                $null = New-Item -ItemType Directory -Path (Split-Path $destination -Parent) -Force
+                $temp = Get-TempOutputPath -FinalOutputPath $destination -RunId ([guid]::NewGuid().ToString('N'))
+                $dateText = if ($date.HasTimezone) { $date.DateTimeOffset.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ') } else { $date.DateTime.ToString('s') }
+                Invoke-TimeShiftRemux -SourcePath $file.Path -OutputPath $temp -CreationTime $dateText -FfmpegPath $config.Tools.Ffmpeg
+                if ([IO.Path]::GetExtension($destination) -in @('.mp4', '.mov', '.m4v')) {
+                    $null = Copy-VideoMetadata -SourceFile $file.Path -DestinationFile $temp -ExifToolPath $config.Tools.ExifTool
+                    $null = Set-VideoCaptureDate -Path $temp -CaptureDate $date.DateTime -CaptureDateTimeOffset $date.DateTimeOffset -HasTimezone:$date.HasTimezone -Source $date.Source -ExifToolPath $config.Tools.ExifTool -SetAllCommonDateTags -CorrectOriginalDate
+                    $verified = Resolve-VideoCaptureDate -Path $temp -ExifToolPath $config.Tools.ExifTool -DateConfig $config.Dates
+                    if (-not $verified.Success -or [math]::Abs(($verified.DateTime - $date.DateTime).TotalSeconds) -gt 1) {
+                        throw 'Capture date verification failed.'
+                    }
+                }
+                Set-FileSystemTimestamps -SourceFile $file.Path -DestinationFile $temp -FileTimestampMode captureDate -CaptureDate $date.DateTime -CaptureDateTimeOffset $date.DateTimeOffset -HasTimezone:$date.HasTimezone
+                Move-Item -LiteralPath $temp -Destination $destination -ErrorAction Stop
+                Write-Host "Saved: $destination"
+            } catch {
+                $failures++
+                Write-Warning ("{0}: {1}" -f $file.RelativePath, $_.Exception.Message)
+            } finally {
+                if ($temp -and (Test-Path -LiteralPath $temp)) { Remove-Item -LiteralPath $temp -Force }
+            }
+        }
+        Write-Host ("Time shift finished. Files: {0}; failed: {1}; output: {2}" -f $files.Count, $failures, $outputRoot)
+        if ($failures -gt 0) { throw "Time shift failed for $failures file(s)." }
+        return
+    }
     if ($RotationMode -eq 'config') { $RotationMode = [string]$config.Advanced.rotationMode }
     $resolvedRotationDegrees = if ($RotationDegrees -eq 'config') { [int]$config.Advanced.rotationDegrees } else { [int]$RotationDegrees }
     if ($RotationMode -eq 'none' -or $resolvedRotationDegrees -eq 0) {

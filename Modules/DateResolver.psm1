@@ -496,7 +496,9 @@ function Set-VideoCaptureDate {
         [Parameter(Mandatory)]
         [string]$ExifToolPath,
 
-        [switch]$SetAllCommonDateTags
+        [switch]$SetAllCommonDateTags,
+
+        [switch]$CorrectOriginalDate
     )
 
     if ($Source -eq 'None') {
@@ -535,6 +537,10 @@ function Set-VideoCaptureDate {
             "-XMP:CreateDate=$localDateText"
             "-XMP:ModifyDate=$localDateText"
         )
+    }
+    if ($CorrectOriginalDate) {
+        $originalText = if ($HasTimezone -and $null -ne $CaptureDateTimeOffset) { $CaptureDateTimeOffset.ToString('yyyy:MM:dd HH:mm:sszzz') } else { $localDateText }
+        $args += @("-EXIF:DateTimeOriginal=$originalText", "-XMP:DateTimeOriginal=$originalText")
     }
     $args += $Path
 

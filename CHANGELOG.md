@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added Advanced capture time shift for folders and CLI `-TimeShift`: signed offsets, recursive stream-copy remux, separate outputs, dry run, and corrected capture/file dates without re-encoding.
+
 ## 3.0.0
 
 - Added `VideoArchive.GUI.ps1` as a WPF desktop launcher.

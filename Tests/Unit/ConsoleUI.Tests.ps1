@@ -32,6 +32,14 @@ Describe 'ConsoleUI menus' {
         $selection.Advanced.InputPath | Should Be 'D:\Video\clip.mp4'
     }
 
+    It 'selects folder capture time shift without an encoding preset prompt' {
+        foreach ($response in @('5', '2', 'D:\Video', '-03:00:00')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
+        $selection = Select-VideoArchiveMainMenu -PresetCatalog $catalog
+        $selection.Advanced.Operation | Should Be 'timeShift'
+        $selection.Advanced.InputPath | Should Be 'D:\Video'
+        $selection.Advanced.TimeShift | Should Be '-03:00:00'
+    }
+
     It 'selects physical 270-degree rotation' {
         foreach ($response in @('5', '1', '6', '1', 'D:\Video\clip.mov')) { $global:VideoArchiveMenuResponses.Enqueue($response) }
 
